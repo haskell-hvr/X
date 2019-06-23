@@ -1,25 +1,23 @@
-XML
-===
+X
+=
 
-Light-weight library for simple parsing and creation of XML documents.
-It only depends on `base`, `bytestring` and `text`.
-
-The library primarily uses the `String` type, which makes it rather
-inefficient for large files.
-
+Light-weight Haskell XML library derived from the
+[`xml` package](http://hackage.haskell.org/package/xml)
+for simple parsing and creation of XML documents.
+It only depends on `base`, `bytestring`, `text`, and `text-short`.
 
 Example
 -------
 
 ```
 {-# LANGUAGE RecordWildCards #-}
-import Text.XML.Light
+import Text.XML
 
 data Package = Package
-  { pOrderNo  :: String
-  , pOrderPos :: String
-  , pBarcode  :: String
-  , pNumber   :: String
+  { pOrderNo  :: Text
+  , pOrderPos :: Text
+  , pBarcode  :: Text
+  , pNumber   :: Text
   }
 
 -- | Create XML from a Package

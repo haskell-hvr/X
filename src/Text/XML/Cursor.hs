@@ -1,19 +1,16 @@
 --------------------------------------------------------------------
 -- |
--- Module    : Text.XML.Light.Cursor
+-- Module    : Text.XML.Cursor
 -- Copyright : (c) Galois, Inc. 2008
--- License   : BSD3
---
--- Maintainer: Iavor S. Diatchki <diatchki@galois.com>
--- Stability : provisional
--- Portability: portable
+--             (c) Herbert Valerio Riedel 2019
+-- SPDX-License-Identifier: BSD-3-Clause AND GPL-3.0-or-later
 --
 -- XML cursors for working XML content withing the context of
 -- an XML document.  This implementation is based on the general
 -- tree zipper written by Krasimir Angelov and Iavor S. Diatchki.
 --
 
-module Text.XML.Light.Cursor
+module Text.XML.Cursor
   ( Tag(..), getTag, setTag, fromTag
   , Cursor(..), Path
 
@@ -69,9 +66,9 @@ module Text.XML.Light.Cursor
 
   ) where
 
-import Text.XML.Light.Types
-import Data.Maybe(isNothing)
-import Control.Monad(mplus)
+import           Control.Monad  (mplus)
+import           Data.Maybe     (isNothing)
+import           Text.XML.Types
 
 data Tag = Tag { tagName    :: QName
                , tagAttribs :: [Attr]
@@ -283,13 +280,13 @@ insertRight t loc = loc { rights = t : rights loc }
 removeLeft :: Cursor -> Maybe (Content,Cursor)
 removeLeft loc = case lefts loc of
                    l : ls -> return (l,loc { lefts = ls })
-                   [] -> Nothing
+                   []     -> Nothing
 
 -- | Remove the content on the right of the current position, if any.
 removeRight :: Cursor -> Maybe (Content,Cursor)
 removeRight loc = case rights loc of
                     l : ls -> return (l,loc { rights = ls })
-                    [] -> Nothing
+                    []     -> Nothing
 
 
 -- | Insert content to the left of the current position.

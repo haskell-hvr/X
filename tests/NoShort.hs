@@ -1,4 +1,4 @@
-import Text.XML.Light
+import Text.XML
 
 pp = useShortEmptyTags (const False) defaultConfigPP
 

@@ -1,15 +1,22 @@
+{-# LANGUAGE FlexibleInstances    #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 
-module Text.XML.Light.Lexer where
+-- |
+-- Module    : Text.XML.Lexer
+-- Copyright : (c) Galois, Inc. 2007
+--             (c) Herbert Valerio Riedel 2019
+-- SPDX-License-Identifier: BSD-3-Clause AND GPL-3.0-or-later
+--
+module Text.XML.Lexer where
 
-import Text.XML.Light.Types
+import           Text.XML.Types
 
-import Data.Char (chr,isSpace)
-import Numeric (readHex)
 import qualified Data.ByteString      as S
 import qualified Data.ByteString.Lazy as L
+import           Data.Char            (chr, isSpace)
 import qualified Data.Text            as TS
 import qualified Data.Text.Lazy       as TL
+import           Numeric              (readHex)
 
 
 class XmlSource s where
@@ -96,8 +103,8 @@ tokens' cs@((l,_):_) = let (as,bs) = breakn ('<' ==) cs
 special :: LChar -> LString -> [Token]
 special _ ((_,'-') : (_,'-') : cs) = skip cs
   where skip ((_,'-') : (_,'-') : (_,'>') : ds) = tokens' ds
-        skip (_ : ds) = skip ds
-        skip [] = [] -- unterminated comment
+        skip (_ : ds)                           = skip ds
+        skip []                                 = [] -- unterminated comment
 
 special c ((_,'[') : (_,'C') : (_,'D') : (_,'A') : (_,'T') : (_,'A') : (_,'[')
          : cs) =
@@ -142,7 +149,7 @@ tag ((p,'/') : cs)    = let (n,ds) = qualName (dropSpace cs)
                         in TokEnd p n : case (dropSpace ds) of
                                           (_,'>') : es -> tokens' es
                                           -- tag was not properly closed...
-                                          _        -> tokens' ds
+                                          _            -> tokens' ds
 tag []            = []
 tag cs            = let (n,ds)  = qualName cs
                         (as,b,ts) = attribs (dropSpace ds)
@@ -155,7 +162,7 @@ attribs cs        = case cs of
                       (_,'/') : ds -> ([], True, case ds of
                                               (_,'>') : es -> tokens' es
                                               -- insert missing >  ...
-                                              _ -> tokens' ds)
+                                              _            -> tokens' ds)
 
                       (_,'?') : (_,'>') : ds -> ([], True, tokens' ds)
 
@@ -173,7 +180,7 @@ attrib cs           = let (ks,cs1)  = qualName cs
 
 attr_val           :: LString -> (String,LString)
 attr_val ((_,'=') : cs) = string (dropSpace cs)
-attr_val cs         = ("",cs)
+attr_val cs             = ("",cs)
 
 
 dropSpace :: LString -> LString
@@ -195,7 +202,7 @@ string cs           = breakn eos cs
 break' :: (a -> Bool) -> [(b,a)] -> ([a],[(b,a)])
 break' p xs         = let (as,bs) = breakn p xs
                       in (as, case bs of
-                                [] -> []
+                                []     -> []
                                 _ : cs -> cs)
 
 breakn :: (a -> Bool) -> [(b,a)] -> ([a],[(b,a)])
@@ -207,7 +214,7 @@ decode_attr :: String -> String
 decode_attr cs = concatMap cvt (decode_text cs)
   where cvt (TxtBit x) = x
         cvt (CRefBit x) = case cref_to_char x of
-                            Just c -> [c]
+                            Just c  -> [c]
                             Nothing -> '&' : x ++ ";"
 
 data Txt = TxtBit String | CRefBit String deriving Show
@@ -215,28 +222,28 @@ data Txt = TxtBit String | CRefBit String deriving Show
 decode_text :: [Char] -> [Txt]
 decode_text xs@('&' : cs) = case break (';' ==) cs of
                               (as,_:bs) -> CRefBit as : decode_text bs
-                              _ -> [TxtBit xs]
+                              _         -> [TxtBit xs]
 decode_text []  = []
 decode_text cs  = let (as,bs) = break ('&' ==) cs
                   in TxtBit as : decode_text bs
 
 cref_to_char :: [Char] -> Maybe Char
 cref_to_char cs = case cs of
-  '#' : ds  -> num_esc ds
-  "lt"      -> Just '<'
-  "gt"      -> Just '>'
-  "amp"     -> Just '&'
-  "apos"    -> Just '\''
-  "quot"    -> Just '"'
-  _         -> Nothing
+  '#' : ds -> num_esc ds
+  "lt"     -> Just '<'
+  "gt"     -> Just '>'
+  "amp"    -> Just '&'
+  "apos"   -> Just '\''
+  "quot"   -> Just '"'
+  _        -> Nothing
 
 num_esc :: String -> Maybe Char
 num_esc cs = case cs of
                'x' : ds -> check (readHex ds)
                _        -> check (reads cs)
 
-  where check [(n,"")]  = cvt_char n
-        check _         = Nothing
+  where check [(n,"")] = cvt_char n
+        check _        = Nothing
 
 cvt_char :: Int -> Maybe Char
 cvt_char x

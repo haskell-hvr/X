@@ -1,22 +1,19 @@
 --------------------------------------------------------------------
 -- |
--- Module    : Text.XML.Light.Proc
+-- Module    : Text.XML.Proc
 -- Copyright : (c) Galois, Inc. 2007
--- License   : BSD3
---
--- Maintainer: Iavor S. Diatchki <diatchki@galois.com>
--- Stability : provisional
--- Portability:
+--             (c) Herbert Valerio Riedel 2019
+-- SPDX-License-Identifier: BSD-3-Clause AND GPL-3.0-or-later
 --
 --------------------------------------------------------------------
 
 
-module Text.XML.Light.Proc where
+module Text.XML.Proc where
 
-import Text.XML.Light.Types
+import           Text.XML.Types
 
-import Data.Maybe(listToMaybe)
-import Data.List(find)
+import           Data.List      (find)
+import           Data.Maybe     (listToMaybe)
 
 -- | Get the text value of an XML element.  This function
 -- ignores non-text elements, and concatenates all text elements.

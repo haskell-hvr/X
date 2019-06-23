@@ -1,4 +1,4 @@
-import Text.XML.Light
+import Text.XML
 
 main = do
         s <- readFile "rss.xml"

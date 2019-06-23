@@ -1,41 +1,38 @@
 {-# LANGUAGE FlexibleInstances #-}
 --------------------------------------------------------------------
 -- |
--- Module    : Text.XML.Light
+-- Module    : Text.XML
 -- Copyright : (c) Galois, Inc. 2007
--- License   : BSD3
---
--- Maintainer: Iavor S. Diatchki <diatchki@galois.com>
--- Stability : provisional
--- Portability: portability
+--             (c) Herbert Valerio Riedel 2019
+-- SPDX-License-Identifier: BSD-3-Clause AND GPL-3.0-or-later
 --
 -- A lightweight XML parsing, filtering and generating library.
 --
 -- This module reexports functions from:
 --
--- * "Text.XML.Light.Types"
+-- * "Text.XML.Types"
 --
--- * "Text.XML.Light.Proc"
+-- * "Text.XML.Proc"
 --
--- * "Text.XML.Light.Input"
+-- * "Text.XML.Input"
 --
--- * "Text.XML.Light.Output"
+-- * "Text.XML.Output"
 --
 
-module Text.XML.Light (
+module Text.XML (
 
-    module Text.XML.Light,
-    module Text.XML.Light.Types,
-    module Text.XML.Light.Proc,
-    module Text.XML.Light.Input,
-    module Text.XML.Light.Output
+    module Text.XML,
+    module Text.XML.Types,
+    module Text.XML.Proc,
+    module Text.XML.Input,
+    module Text.XML.Output
 
   ) where
 
-import Text.XML.Light.Types
-import Text.XML.Light.Proc
-import Text.XML.Light.Input
-import Text.XML.Light.Output
+import           Text.XML.Input
+import           Text.XML.Output
+import           Text.XML.Proc
+import           Text.XML.Types
 
 -- | Add an attribute to an element.
 add_attr :: Attr -> Element -> Element

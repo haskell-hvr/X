@@ -1,17 +1,14 @@
 --------------------------------------------------------------------
 -- |
--- Module    : Text.XML.Light.Output
+-- Module    : Text.XML.Output
 -- Copyright : (c) Galois, Inc. 2007
--- License   : BSD3
---
--- Maintainer: Iavor S. Diatchki <diatchki@galois.com>
--- Stability : provisional
--- Portability:
+--             (c) Herbert Valerio Riedel 2019
+-- SPDX-License-Identifier: BSD-3-Clause AND GPL-3.0-or-later
 --
 -- Output handling for the lightweight XML lib.
 --
 
-module Text.XML.Light.Output
+module Text.XML.Output
   ( showTopElement, showContent, showElement, showCData, showQName, showAttr
   , ppTopElement, ppContent, ppElement
   , ppcTopElement, ppcContent, ppcElement
@@ -21,9 +18,9 @@ module Text.XML.Light.Output
   , tagEnd, xml_header
   ) where
 
-import Text.XML.Light.Types
-import Data.Char
-import Data.List ( isPrefixOf )
+import           Data.Char
+import           Data.List      (isPrefixOf)
+import           Text.XML.Types
 
 -- | The XML 1.0 header
 xml_header :: String
@@ -126,8 +123,8 @@ ppCDataS c i t xs   = i ++ if cdVerbatim t /= CDataText || not (prettify c)
                              else foldr cons xs (showCData t)
 
   where cons         :: Char -> String -> String
-        cons '\n' ys  = "\n" ++ i ++ ys
-        cons y ys     = y : ys
+        cons '\n' ys = "\n" ++ i ++ ys
+        cons y ys    = y : ys
 
 
 

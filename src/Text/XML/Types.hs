@@ -1,21 +1,18 @@
 --------------------------------------------------------------------
 -- |
--- Module    : Text.XML.Light.Types
+-- Module    : Text.XML.Types
 -- Copyright : (c) Galois, Inc. 2007
--- License   : BSD3
---
--- Maintainer: Iavor S. Diatchki <diatchki@galois.com>
--- Stability : provisional
--- Portability:
+--             (c) Herbert Valerio Riedel 2019
+-- SPDX-License-Identifier: BSD-3-Clause AND GPL-3.0-or-later
 --
 -- Basic XML types.
 --
 
 {-# LANGUAGE DeriveDataTypeable #-}
-module Text.XML.Light.Types where
+module Text.XML.Types where
 
-import Data.Typeable(Typeable)
-import Data.Data(Data)
+import           Data.Data     (Data)
+import           Data.Typeable (Typeable)
 
 -- | A line is an Integer
 type Line     = Integer
@@ -28,10 +25,10 @@ data Content  = Elem Element
 
 -- | XML elements
 data Element  = Element {
-                  elName      :: QName,
-                  elAttribs   :: [Attr],
-                  elContent   :: [Content],
-                  elLine      :: Maybe Line
+                  elName    :: QName,
+                  elAttribs :: [Attr],
+                  elContent :: [Content],
+                  elLine    :: Maybe Line
                 } deriving (Show, Typeable, Data)
 
 -- | XML attributes
@@ -42,9 +39,9 @@ data Attr     = Attr {
 
 -- | XML CData
 data CData    = CData {
-                  cdVerbatim  :: CDataKind,
-                  cdData      :: String,
-                  cdLine      :: Maybe Line
+                  cdVerbatim :: CDataKind,
+                  cdData     :: String,
+                  cdLine     :: Maybe Line
                 } deriving (Show, Typeable, Data)
 
 data CDataKind

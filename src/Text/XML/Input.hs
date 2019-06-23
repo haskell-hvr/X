@@ -1,24 +1,20 @@
---------------------------------------------------------------------
 -- |
--- Module    : Text.XML.Light.Input
+-- Module    : Text.XML.Input
 -- Copyright : (c) Galois, Inc. 2007
--- License   : BSD3
---
--- Maintainer: Iavor S. Diatchki <diatchki@galois.com>
--- Stability : provisional
--- Portability: portable
+--             (c) Herbert Valerio Riedel 2019
+-- SPDX-License-Identifier: BSD-3-Clause AND GPL-3.0-or-later
 --
 -- Lightweight XML parsing
 --
 
-module Text.XML.Light.Input (parseXML,parseXMLDoc) where
+module Text.XML.Input (parseXML,parseXMLDoc) where
 
-import Text.XML.Light.Lexer
-import Text.XML.Light.Types
-import Text.XML.Light.Proc
-import Text.XML.Light.Output(tagEnd)
+import           Text.XML.Lexer
+import           Text.XML.Output (tagEnd)
+import           Text.XML.Proc
+import           Text.XML.Types
 
-import Data.List(isPrefixOf)
+import           Data.List       (isPrefixOf)
 
 -- | parseXMLDoc, parse a XMLl document to maybe an element
 parseXMLDoc  :: XmlSource s => s -> Maybe Element
@@ -76,7 +72,7 @@ nodes cur_info ps (TokStart p t as empty : ts) = (node : siblings, open, toks)
     | otherwise = let (es1,qs1,ts1) = nodes new_info (new_name:ps) ts
                   in (es1,
                       case qs1 of
-                        [] -> nodes cur_info ps ts1
+                        []      -> nodes cur_info ps ts1
                         _ : qs3 -> ([],qs3,ts1))
 
 nodes ns ps (TokEnd p t : ts)   = let t1 = annotName ns t
@@ -103,8 +99,8 @@ annotAttr ns a@(Attr { attrKey = k}) =
   case (qPrefix k, qName k) of
     -- Do not apply the default name-space to unqualified
     -- attributes.  See Section 6.2 of <http://www.w3.org/TR/REC-xml-names>.
-    (Nothing, _)      -> a
-    _                 -> a { attrKey = annotName ns k }
+    (Nothing, _) -> a
+    _            -> a { attrKey = annotName ns k }
 
 addNS :: Attr -> NSInfo -> NSInfo
 addNS (Attr { attrKey = key, attrVal = val }) (ns,def) =
