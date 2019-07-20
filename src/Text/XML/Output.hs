@@ -11,20 +11,26 @@
 --
 
 module Text.XML.Output
-  ( showTopElement, showContent, showElement, showCData, showQName, showAttr
-  , ppTopElement, ppContent, ppElement
-  , ppcTopElement, ppcContent, ppcElement
-  , ConfigPP
-  , defaultConfigPP, prettyConfigPP
-  , useShortEmptyTags, useExtraWhiteSpace
-  , tagEnd, xml_header
+  ( serializeXML
+  , serializeXMLDoc
   ) where
 
 import           Common
 import           Data.Char
 import qualified Data.Text       as T
+import qualified Data.Text.Lazy  as TL
 import qualified Data.Text.Short as TS
 import           Text.XML.Types
+
+-- | Serialize XML 1.0 document prefixed by the XML prologue
+-- \"@\<?xml version='1.0' ?\>@\"
+--
+serializeXMLDoc :: Element -> TL.Text
+serializeXMLDoc = TL.pack . showTopElement
+
+-- | Serialize a sequence of XML 'Content' nodes
+serializeXML :: [Content] -> TL.Text
+serializeXML = TL.pack . foldr (ppContentS defaultConfigPP "") ""
 
 -- | The XML 1.0 header
 xml_header :: String
@@ -32,55 +38,26 @@ xml_header = "<?xml version='1.0' ?>"
 
 --------------------------------------------------------------------------------
 data ConfigPP = ConfigPP
-  { shortEmptyTag :: QName -> Bool
-  , prettify      :: Bool
+  { prettify :: !Bool
   }
 
 -- | Default pretty printing configuration.
 --  * Always use abbreviate empty tags.
 defaultConfigPP :: ConfigPP
-defaultConfigPP = ConfigPP
-  { shortEmptyTag = const True
-  , prettify      = False
-  }
+defaultConfigPP = ConfigPP { prettify = False }
 
--- | The predicate specifies for which empty tags we should use XML's
--- abbreviated notation <TAG />.  This is useful if we are working with
--- some XML-ish standards (such as certain versions of HTML) where some
--- empty tags should always be displayed in the <TAG></TAG> form.
-useShortEmptyTags :: (QName -> Bool) -> ConfigPP -> ConfigPP
-useShortEmptyTags p c = c { shortEmptyTag = p }
-
--- | Specify if we should use extra white-space to make document more readable.
--- WARNING: This adds additional white-space to text elements,
--- and so it may change the meaning of the document.
-useExtraWhiteSpace :: Bool -> ConfigPP -> ConfigPP
-useExtraWhiteSpace p c  = c { prettify = p }
-
+{-
 -- | A configuration that tries to make things pretty
 -- (possibly at the cost of changing the semantics a bit
 -- through adding white space.)
 prettyConfigPP     :: ConfigPP
-prettyConfigPP      = useExtraWhiteSpace True defaultConfigPP
-
-
---------------------------------------------------------------------------------
-
+prettyConfigPP      = defaultConfigPP { prettify = True }
 
 -- | Pretty printing renders XML documents faithfully,
 -- with the exception that whitespace may be added\/removed
 -- in non-verbatim character data.
 ppTopElement       :: Element -> String
 ppTopElement        = ppcTopElement prettyConfigPP
-
--- | Pretty printing elements
-ppElement          :: Element -> String
-ppElement           = ppcElement prettyConfigPP
-
--- | Pretty printing content
-ppContent          :: Content -> String
-ppContent           = ppcContent prettyConfigPP
-
 
 -- | Pretty printing renders XML documents faithfully,
 -- with the exception that whitespace may be added\/removed
@@ -91,11 +68,7 @@ ppcTopElement c e   = unlines [xml_header,ppcElement c e]
 -- | Pretty printing elements
 ppcElement         :: ConfigPP -> Element -> String
 ppcElement c e      = ppElementS c "" e ""
-
--- | Pretty printing content
-ppcContent         :: ConfigPP -> Content -> String
-ppcContent c x      = ppContentS c "" x ""
-
+-}
 
 -- | Pretty printing content using ShowS
 ppContentS         :: ConfigPP -> String -> Content -> ShowS
@@ -108,7 +81,7 @@ ppElementS         :: ConfigPP -> String -> Element -> ShowS
 ppElementS c i e xs = i ++ (tagStart (elName e) (elAttribs e) $
   case elContent e of
     [] | "?" `TS.isPrefixOf` unLName (qLName name) -> " ?>" ++ xs
-       | shortEmptyTag c name  -> " />" ++ xs
+       | otherwise                                 -> " />" ++ xs
     [Text t] -> ">" ++ ppCDataS c "" t (tagEnd name xs)
     cs -> '>' : nl ++ foldr ppSub (i ++ tagEnd name xs) cs
       where ppSub e1 = ppContentS c (sp ++ i) e1 . showString nl
@@ -116,7 +89,6 @@ ppElementS c i e xs = i ++ (tagStart (elName e) (elAttribs e) $
   )
   where
     name = elName e
-
 
 ppCDataS           :: ConfigPP -> String -> CData -> ShowS
 ppCDataS c i t xs   = i ++ if cdVerbatim t /= CDataText || not (prettify c)
@@ -132,9 +104,6 @@ ppCDataS c i t xs   = i ++ if cdVerbatim t /= CDataText || not (prettify c)
 -- | Adds the <?xml?> header.
 showTopElement     :: Element -> String
 showTopElement c    = xml_header ++ showElement c
-
-showContent        :: Content -> String
-showContent c       = ppContentS defaultConfigPP "" c ""
 
 showElement        :: Element -> String
 showElement c       = ppElementS defaultConfigPP "" c ""

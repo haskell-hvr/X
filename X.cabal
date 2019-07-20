@@ -24,12 +24,12 @@ library
       Text.XML.Types
       Text.XML.Output
       Text.XML.Input
-      Text.XML.Lexer
       Text.XML.Proc
       Text.XML.Cursor
 
   other-modules:
       Common
+      Text.XML.Lexer
 
   build-depends:
     , base       ^>= 4.7.0

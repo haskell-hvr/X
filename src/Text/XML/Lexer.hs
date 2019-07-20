@@ -12,11 +12,11 @@ module Text.XML.Lexer where
 import           Common
 import           Text.XML.Types
 
-import           Data.Char            (isSpace)
-import qualified Data.Text            as TS
-import qualified Data.Text            as T
-import qualified Data.Text.Lazy       as TL
-import           Numeric              (readHex)
+import           Data.Char      (isSpace)
+import qualified Data.Text      as TS
+import qualified Data.Text      as T
+import qualified Data.Text.Lazy as TL
+import           Numeric        (readHex)
 
 class XmlSource s where
   uncons :: s -> Maybe (Char,s)

@@ -9,27 +9,32 @@
 -- Lightweight XML parsing
 --
 
-module Text.XML.Input (parseXML,parseXMLDoc) where
+module Text.XML.Input
+    ( parseXML
+    , parseXMLDoc
+
+    , XmlSource(uncons), Scanner, customScanner
+    ) where
 
 import           Common
 
 import           Text.XML.Lexer
-import           Text.XML.Output (tagEnd)
 import           Text.XML.Proc
 import           Text.XML.Types
 
 import qualified Data.Text       as T
 import qualified Data.Text.Short as TS
 
--- | parseXMLDoc, parse a XMLl document to maybe an element
+-- | parseXMLDoc, parse a XML document to /maybe/ an element
 parseXMLDoc  :: XmlSource s => s -> Maybe Element
 parseXMLDoc xs  = strip (parseXML xs)
-  where strip cs = case onlyElems cs of
-                    e : es
-                      | "?xml" `TS.isPrefixOf` unLName (qLName (elName e))
-                          -> strip (map Elem es)
-                      | otherwise -> Just e
-                    _ -> Nothing
+  where
+    strip cs = case onlyElems cs of
+                 e : es
+                   | "?xml" `TS.isPrefixOf` unLName (qLName (elName e))
+                     -> strip (map Elem es)
+                   | otherwise -> Just e
+                 _ -> Nothing
 
 -- | parseXML to a list of content chunks
 parseXML :: XmlSource s => s -> [Content]
@@ -86,7 +91,7 @@ nodes ns ps (TokEnd _ t : ts)   = let t1 = annotName ns t
                                   (_,[]) ->
                                     let (es,qs,ts1) = nodes ns ps ts
                                     in (Text CData { cdVerbatim = CDataText
-                                                   , cdData = fromString (tagEnd t "")
+                                                   , cdData = renderTagEnd t
                                                    } : es,qs, ts1)
 
 nodes _ ps []                 = ([],ps,[])
@@ -110,3 +115,15 @@ addNS (Attr { attrKey = key, attrVal = val }) (ns,def) =
     (Nothing,LName "xmlns") -> (ns, if T.null val then Nothing else Just (URI (TS.fromText val)))
     (Just "xmlns", k) -> ((unLName k, URI (TS.fromText val)) : ns, def)
     _                 -> (ns,def)
+
+
+-- local helper
+renderTagEnd :: QName -> Text
+renderTagEnd qn = fromString $ '<':'/':showQName qn ++ '>':""
+  where
+    showQName :: QName -> String
+    showQName q = pre ++ TS.unpack (unLName (qLName q))
+      where
+        pre = case qPrefix q of
+                Nothing -> ""
+                Just p  -> TS.unpack p ++ ":"
