@@ -11,6 +11,7 @@ copyright:       (c) 2007-2008 Galois Inc.,
 
 synopsis:        A light-weight XML library
 category:        Text, XML
+bug-reports:     https://github.com/hvr/issues
 description:
   Light-weight XML library derived from the [`xml` package](http://hackage.haskell.org/package/xml)
   for simple parsing and creation of XML documents.
@@ -27,6 +28,9 @@ library
       Text.XML.Proc
       Text.XML.Cursor
 
+  other-modules:
+      Common
+
   build-depends:
     , base       ^>= 4.7.0
               || ^>= 4.8.0
@@ -36,7 +40,7 @@ library
               || ^>= 4.12.0
     , bytestring ^>= 0.10.4
     , text       ^>= 1.2.3
-    , text-short ^>= 0.1.2
+    , text-short ^>= 0.1.3
 
   ghc-options:        -Wall
   default-language:   Haskell2010

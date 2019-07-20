@@ -1,3 +1,5 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 -- |
 -- Module    : Text.XML.Input
 -- Copyright : (c) Galois, Inc. 2007
@@ -9,19 +11,22 @@
 
 module Text.XML.Input (parseXML,parseXMLDoc) where
 
+import           Common
+
 import           Text.XML.Lexer
 import           Text.XML.Output (tagEnd)
 import           Text.XML.Proc
 import           Text.XML.Types
 
-import           Data.List       (isPrefixOf)
+import qualified Data.Text       as T
+import qualified Data.Text.Short as TS
 
 -- | parseXMLDoc, parse a XMLl document to maybe an element
 parseXMLDoc  :: XmlSource s => s -> Maybe Element
 parseXMLDoc xs  = strip (parseXML xs)
   where strip cs = case onlyElems cs of
                     e : es
-                      | "?xml" `isPrefixOf` qName (elName e)
+                      | "?xml" `TS.isPrefixOf` unLName (qLName (elName e))
                           -> strip (map Elem es)
                       | otherwise -> Just e
                     _ -> Nothing
@@ -40,7 +45,7 @@ parse ts    = let (es,_,ts1) = nodes ([],Nothing) [] ts
 -- Information about namespaces.
 -- The first component is a map that associates prefixes to URIs,
 -- the second is the URI for the default namespace, if one was provided.
-type NSInfo = ([(String,String)],Maybe String)
+type NSInfo = ([(ShortText,URI)],Maybe URI)
 
 nodes :: NSInfo -> [QName] -> [Token] -> ([Content], [QName], [Token])
 
@@ -53,16 +58,15 @@ nodes ns ps (TokText txt : ts) =
       (more,es1)  = case es of
                       Text cd : es1'
                         | cdVerbatim cd == cdVerbatim txt -> (cdData cd,es1')
-                      _                                   -> ([],es)
+                      _                                   -> (mempty,es)
 
-  in (Text txt { cdData = cdData txt ++ more } : es1, qs, ts1)
+  in (Text txt { cdData = cdData txt `T.append` more } : es1, qs, ts1)
 
-nodes cur_info ps (TokStart p t as empty : ts) = (node : siblings, open, toks)
+nodes cur_info ps (TokStart _ t as empty : ts) = (node : siblings, open, toks)
   where
   new_name  = annotName new_info t
   new_info  = foldr addNS cur_info as
-  node      = Elem Element { elLine    = Just p
-                           , elName    = new_name
+  node      = Elem Element { elName    = new_name
                            , elAttribs = map (annotAttr new_info) as
                            , elContent = children
                            }
@@ -75,17 +79,15 @@ nodes cur_info ps (TokStart p t as empty : ts) = (node : siblings, open, toks)
                         []      -> nodes cur_info ps ts1
                         _ : qs3 -> ([],qs3,ts1))
 
-nodes ns ps (TokEnd p t : ts)   = let t1 = annotName ns t
+nodes ns ps (TokEnd _ t : ts)   = let t1 = annotName ns t
                                 in case break (t1 ==) ps of
                                   (as,_:_) -> ([],as,ts)
                                   -- Unknown closing tag. Insert as text.
                                   (_,[]) ->
                                     let (es,qs,ts1) = nodes ns ps ts
-                                    in (Text CData {
-                                               cdLine = Just p,
-                                               cdVerbatim = CDataText,
-                                               cdData = tagEnd t ""
-                                              } : es,qs, ts1)
+                                    in (Text CData { cdVerbatim = CDataText
+                                                   , cdData = fromString (tagEnd t "")
+                                                   } : es,qs, ts1)
 
 nodes _ ps []                 = ([],ps,[])
 
@@ -96,7 +98,7 @@ annotName (namespaces,def_ns) n =
 
 annotAttr :: NSInfo -> Attr -> Attr
 annotAttr ns a@(Attr { attrKey = k}) =
-  case (qPrefix k, qName k) of
+  case (qPrefix k, qLName k) of
     -- Do not apply the default name-space to unqualified
     -- attributes.  See Section 6.2 of <http://www.w3.org/TR/REC-xml-names>.
     (Nothing, _) -> a
@@ -104,7 +106,7 @@ annotAttr ns a@(Attr { attrKey = k}) =
 
 addNS :: Attr -> NSInfo -> NSInfo
 addNS (Attr { attrKey = key, attrVal = val }) (ns,def) =
-  case (qPrefix key, qName key) of
-    (Nothing,"xmlns") -> (ns, if null val then Nothing else Just val)
-    (Just "xmlns", k) -> ((k, val) : ns, def)
+  case (qPrefix key, qLName key) of
+    (Nothing,LName "xmlns") -> (ns, if T.null val then Nothing else Just (URI (TS.fromText val)))
+    (Just "xmlns", k) -> ((unLName k, URI (TS.fromText val)) : ns, def)
     _                 -> (ns,def)

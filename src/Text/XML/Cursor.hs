@@ -72,13 +72,11 @@ import           Text.XML.Types
 
 data Tag = Tag { tagName    :: QName
                , tagAttribs :: [Attr]
-               , tagLine    :: Maybe Line
                } deriving (Show)
 
 getTag :: Element -> Tag
 getTag e = Tag { tagName = elName e
                , tagAttribs = elAttribs e
-               , tagLine = elLine e
                }
 
 setTag :: Tag -> Element -> Element
@@ -87,7 +85,6 @@ setTag t e = fromTag t (elContent e)
 fromTag :: Tag -> [Content] -> Element
 fromTag t cs = Element { elName    = tagName t
                        , elAttribs = tagAttribs t
-                       , elLine    = tagLine t
                        , elContent = cs
                        }
 

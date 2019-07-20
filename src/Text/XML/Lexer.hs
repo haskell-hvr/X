@@ -9,15 +9,14 @@
 --
 module Text.XML.Lexer where
 
+import           Common
 import           Text.XML.Types
 
-import qualified Data.ByteString      as S
-import qualified Data.ByteString.Lazy as L
-import           Data.Char            (chr, isSpace)
+import           Data.Char            (isSpace)
 import qualified Data.Text            as TS
+import qualified Data.Text            as T
 import qualified Data.Text.Lazy       as TL
 import           Numeric              (readHex)
-
 
 class XmlSource s where
   uncons :: s -> Maybe (Char,s)
@@ -26,30 +25,22 @@ instance XmlSource String where
   uncons (c:s) = Just (c,s)
   uncons ""    = Nothing
 
-instance XmlSource S.ByteString where
-  uncons bs = f `fmap` S.uncons bs
-    where f (c,s) = (chr (fromEnum c), s)
-
-instance XmlSource L.ByteString where
-  uncons bs = f `fmap` L.uncons bs
-    where f (c,s) = (chr (fromEnum c), s)
-
 instance XmlSource TS.Text where
   uncons = TS.uncons
 
 instance XmlSource TL.Text where
   uncons = TL.uncons
 
-linenumber :: XmlSource s => Integer -> s -> LString
+linenumber :: XmlSource s => Int -> s -> LString
 linenumber n s = case uncons s of
-  Nothing -> []
-  Just ('\r', s')   -> case uncons s' of
-    Just ('\n',s'') -> next s''
-    _               -> next s'
-  Just ('\n', s') -> next s'
-  Just (c   , s') -> (n,c) : linenumber n s'
+    Nothing -> []
+    Just ('\r', s')   -> case uncons s' of
+      Just ('\n',s'') -> next s''
+      _               -> next s'
+    Just ('\n', s') -> next s'
+    Just (c   , s') -> (n,c) : linenumber n s'
   where
-  next s' = n' `seq` ((n,'\n'):linenumber n' s') where n' = n + 1
+    next s' = n' `seq` ((n,'\n'):linenumber n' s') where n' = n + 1
 
 
 -- | This type may be used to provide a custom scanning function
@@ -62,17 +53,18 @@ customScanner :: (s -> Maybe (Char,s)) -> s -> Scanner s
 customScanner next s = Scanner (next s) next
 
 instance XmlSource (Scanner s) where
-  uncons (Scanner this next) = do (c,s1) <- this
-                                  return (c, Scanner (next s1) next)
-
+  uncons (Scanner this next) = do
+    (c,s1) <- this
+    return (c, Scanner (next s1) next)
 
 -- Lexer -----------------------------------------------------------------------
 
+type Line               = Int
 type LChar              = (Line,Char)
 type LString            = [LChar]
 data Token              = TokStart Line QName [Attr] Bool  -- is empty?
                         | TokEnd Line QName
-                        | TokCRef String
+                        | TokCRef ShortText
                         | TokText CData
                           deriving Show
 
@@ -84,20 +76,18 @@ tokens' ((_,'<') : c@(_,'!') : cs) = special c cs
 
 tokens' ((_,'<') : cs)   = tag (dropSpace cs) -- we are being nice here
 tokens' [] = []
-tokens' cs@((l,_):_) = let (as,bs) = breakn ('<' ==) cs
+tokens' cs@((_,_):_) = let (as,bs) = breakn ('<' ==) cs
                        in map cvt (decode_text as) ++ tokens' bs
 
   -- XXX: Note, some of the lines might be a bit inacuarate
-  where cvt (TxtBit x)  = TokText CData { cdLine = Just l
-                                        , cdVerbatim = CDataText
-                                        , cdData = x
+  where cvt (TxtBit x)  = TokText CData { cdVerbatim = CDataText
+                                        , cdData = fromString x
                                         }
         cvt (CRefBit x) = case cref_to_char x of
-                            Just c -> TokText CData { cdLine = Just l
-                                                    , cdVerbatim = CDataText
-                                                    , cdData = [c]
+                            Just c -> TokText CData { cdVerbatim = CDataText
+                                                    , cdData = T.singleton c
                                                     }
-                            Nothing -> TokCRef x
+                            Nothing -> TokCRef (fromString x)
 
 
 special :: LChar -> LString -> [Token]
@@ -106,20 +96,19 @@ special _ ((_,'-') : (_,'-') : cs) = skip cs
         skip (_ : ds)                           = skip ds
         skip []                                 = [] -- unterminated comment
 
-special c ((_,'[') : (_,'C') : (_,'D') : (_,'A') : (_,'T') : (_,'A') : (_,'[')
-         : cs) =
+special _ ((_,'[') : (_,'C') : (_,'D') : (_,'A') : (_,'T') : (_,'A') : (_,'[') : cs) =
   let (xs,ts) = cdata cs
-  in TokText CData { cdLine = Just (fst c), cdVerbatim = CDataVerbatim, cdData = xs }
-                                                                  : tokens' ts
+  in TokText CData { cdVerbatim = CDataVerbatim
+                   , cdData = fromString xs
+                   } : tokens' ts
   where cdata ((_,']') : (_,']') : (_,'>') : ds) = ([],ds)
         cdata ((_,d) : ds)  = let (xs,ys) = cdata ds in (d:xs,ys)
         cdata []        = ([],[])
 
-special c cs =
+special _ cs =
   let (xs,ts) = munch "" 0 cs
-  in TokText CData { cdLine = Just (fst c)
-                   , cdVerbatim = CDataRaw
-                   , cdData = '<':'!':(reverse xs)
+  in TokText CData { cdVerbatim = CDataRaw
+                   , cdData = fromString ('<':'!':reverse xs)
                    } : tokens' ts
   where munch acc nesting ((_,'>') : ds)
          | nesting == (0::Int) = ('>':acc,ds)
@@ -137,7 +126,7 @@ qualName xs         = let (as,bs) = breakn endName xs
                           (q,n)   = case break (':'==) as of
                                       (q1,_:n1) -> (Just q1, n1)
                                       _         -> (Nothing, as)
-                      in (QName { qURI = Nothing, qPrefix = q, qName = n }, bs)
+                      in (QName { qURI = Nothing, qPrefix = fmap fromString q, qLName = LName (fromString n) }, bs)
   where endName x = isSpace x || x == '=' || x == '>' || x == '/'
 
 
@@ -176,7 +165,7 @@ attribs cs        = case cs of
 attrib             :: LString -> (Attr,LString)
 attrib cs           = let (ks,cs1)  = qualName cs
                           (vs,cs2)  = attr_val (dropSpace cs1)
-                      in ((Attr ks (decode_attr vs)),dropSpace cs2)
+                      in ((Attr ks (fromString $ decode_attr vs)),dropSpace cs2)
 
 attr_val           :: LString -> (String,LString)
 attr_val ((_,'=') : cs) = string (dropSpace cs)

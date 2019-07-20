@@ -11,59 +11,60 @@
 {-# LANGUAGE DeriveDataTypeable #-}
 module Text.XML.Types where
 
-import           Data.Data     (Data)
-import           Data.Typeable (Typeable)
-
--- | A line is an Integer
-type Line     = Integer
+import           Common
 
 -- | XML content
 data Content  = Elem Element
               | Text CData
-              | CRef String
+              | CRef !ShortText
                 deriving (Show, Typeable, Data)
 
 -- | XML elements
 data Element  = Element {
-                  elName    :: QName,
+                  elName    :: !QName,
                   elAttribs :: [Attr],
-                  elContent :: [Content],
-                  elLine    :: Maybe Line
+                  elContent :: [Content]
                 } deriving (Show, Typeable, Data)
 
 -- | XML attributes
-data Attr     = Attr {
-                  attrKey :: QName,
-                  attrVal :: String
-                } deriving (Eq, Ord, Show, Typeable, Data)
+data Attr     = Attr
+  { attrKey :: QName
+  , attrVal :: Text
+  } deriving (Eq, Ord, Show, Typeable, Data)
 
 -- | XML CData
 data CData    = CData {
-                  cdVerbatim :: CDataKind,
-                  cdData     :: String,
-                  cdLine     :: Maybe Line
+                  cdVerbatim :: !CDataKind,
+                  cdData     :: !Text
                 } deriving (Show, Typeable, Data)
 
 data CDataKind
  = CDataText      -- ^ Ordinary character data; pretty printer escapes &, < etc.
  | CDataVerbatim  -- ^ Unescaped character data; pretty printer embeds it in <![CDATA[..
  | CDataRaw       -- ^ As-is character data; pretty printer passes it along without any escaping or CDATA wrap-up.
-   deriving ( Eq, Show, Typeable, Data )
+ deriving ( Eq, Show, Typeable, Data )
 
 -- | XML qualified names
-data QName    = QName {
-                  qName   :: String,
-                  qURI    :: Maybe String,
-                  qPrefix :: Maybe String
-                } deriving (Show, Typeable, Data)
+data QName    = QName
+  { qLName  :: !LName
+  , qURI    :: Maybe URI
+  , qPrefix :: Maybe ShortText
+  } deriving (Show, Typeable, Data)
 
+-- | XML local names
+newtype LName = LName { unLName :: ShortText }
+  deriving (Show, Ord, Eq, Typeable, Data)
+
+-- | URIs resembling @anyURI@
+newtype URI = URI { unURI :: ShortText }
+  deriving (Show, Ord, Eq, Typeable, Data)
 
 instance Eq QName where
   q1 == q2  = compare q1 q2 == EQ
 
 instance Ord QName where
   compare q1 q2 =
-    case compare (qName q1) (qName q2) of
+    case compare (qLName q1) (qLName q2) of
       EQ  -> case (qURI q1, qURI q2) of
                (Nothing,Nothing) -> compare (qPrefix q1) (qPrefix q2)
                (u1,u2)           -> compare u1 u2
@@ -74,19 +75,18 @@ instance Ord QName where
 
 -- | Blank names
 blank_name :: QName
-blank_name = QName { qName = "", qURI = Nothing, qPrefix = Nothing }
+blank_name = QName { qLName = LName mempty, qURI = Nothing, qPrefix = Nothing }
 
 -- | Blank cdata
 blank_cdata :: CData
-blank_cdata = CData { cdVerbatim = CDataText, cdData = "", cdLine = Nothing }
+blank_cdata = CData { cdVerbatim = CDataText, cdData = mempty }
 
 -- | Blank elements
 blank_element :: Element
 blank_element = Element
-                  { elName    = blank_name
-                  , elAttribs = []
-                  , elContent = []
-                  , elLine    = Nothing
-                  }
+  { elName    = blank_name
+  , elAttribs = []
+  , elContent = []
+  }
 
 
