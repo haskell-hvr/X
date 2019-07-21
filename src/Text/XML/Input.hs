@@ -1,6 +1,7 @@
 {-# LANGUAGE DeriveDataTypeable         #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE OverloadedStrings          #-}
 
 -- |
@@ -34,19 +35,28 @@ import qualified Data.Text       as T
 import qualified Data.Text.Short as TS
 
 -- | parseXMLDoc, parse a XML document to an 'Element'
+--
+-- An optional (single) leading BOM (@U+FEFF@) character will be discard (and not counted in the source positions).
 parseXMLDoc :: XmlSource s => s -> Either (Pos,String) Element
-parseXMLDoc xs0 = parseXML xs0 >>= strip
+parseXMLDoc xs0 = parseXML (dropBOM xs0) >>= go
   where
-    strip cs = case onlyElems cs of
-                 e : es
-                   | "?xml" `TS.isPrefixOf` unLName (qLName (elName e))
-                     -> strip (map Elem es)
-                   | otherwise -> Right e
-                 [] -> Left (-1,"empty document")
+    go cs = case onlyElems cs of
+      []    -> Left (-1,"empty document (i.e. missing root element)")
+      [e]   -> Right e
+      _:_:_ -> Left (-1,"too many root elements in document")
 
 -- | parseXML to a list of 'Content' chunks
+--
+-- __NOTE__: As opposed to 'parseXMLDoc', this function will /not/ discard any BOM characters.
 parseXML :: XmlSource s => s -> Either (Pos,String) [Content]
 parseXML = traverse fromContentF . parse . scanXML
+
+-- | Drop a single leading @U+FEFF@ character
+dropBOM :: XmlSource s => s -> s
+dropBOM s0 = case uncons s0 of
+               Just ('\xFEFF',s1) -> s1
+               Just (_,_)         -> s0
+               Nothing            -> s0
 
 ------------------------------------------------------------------------
 
@@ -55,6 +65,8 @@ data ContentF
   = ElemF (Element' ContentF)
   | TextF CData
   | CRefF !ShortText
+  | ProcF PI
+  | CommF Comment
   | Failure !Int String
   deriving (Show, Typeable, Data, Generic)
 
@@ -63,6 +75,8 @@ instance NFData ContentF
 fromContentF :: ContentF -> Either (Pos,String) Content
 fromContentF (CRefF ref)       = Right (CRef ref)
 fromContentF (TextF cd)        = Right (Text cd)
+fromContentF (ProcF x)         = Right (Proc x)
+fromContentF (CommF x)         = Right (Comm x)
 fromContentF (ElemF el)        = Elem <$> traverse fromContentF el
 fromContentF (Failure pos err) = Left (pos,err)
 
@@ -70,7 +84,7 @@ fromContentF (Failure pos err) = Left (pos,err)
 
 parse :: [Token] -> [ContentF]
 parse [] = []
-parse ts = let (es,_,ts1) = nodes ([],Nothing) [] ts
+parse ts = let (es,_,ts1) = nodes nsinfo0 [] ts
            in es ++ parse ts1
 
 -- Information about namespaces.
@@ -78,16 +92,29 @@ parse ts = let (es,_,ts1) = nodes ([],Nothing) [] ts
 -- the second is the URI for the default namespace, if one was provided.
 type NSInfo = ([(ShortText,URI)],Maybe URI)
 
+nsinfo0 :: NSInfo
+nsinfo0 = ([("xml",xmlNamesNS),("xmlns",xmlnsNS)],Nothing)
 
 nodes :: NSInfo -> [QName] -> [Token] -> ([ContentF], [QName], [Token])
-
 nodes ns ps (TokError pos msg : _) =
   let (es,qs,ts1) = nodes ns ps []
   in (Failure pos msg : es, qs, ts1)
 
+-- TODO
+nodes ns ps (TokXmlDecl _ : ts) = nodes ns ps ts
+nodes ns ps (TokDTD _     : ts) = nodes ns ps ts
+
 nodes ns ps (TokCRef ref : ts) =
   let (es,qs,ts1) = nodes ns ps ts
   in (CRefF ref : es, qs, ts1)
+
+nodes ns ps (TokComment x : ts) =
+  let (es,qs,ts1) = nodes ns ps ts
+  in (CommF x : es, qs, ts1)
+
+nodes ns ps (TokPI _ x : ts) =
+  let (es,qs,ts1) = nodes ns ps ts
+  in (ProcF x : es, qs, ts1)
 
 nodes ns ps (TokText txt : ts) =
   let (es,qs,ts1) = nodes ns ps ts
@@ -98,11 +125,17 @@ nodes ns ps (TokText txt : ts) =
 
   in (TextF txt { cdData = cdData txt `T.append` more } : es1, qs, ts1)
 
-nodes cur_info ps (TokStart _ t as empty' : ts) = (node : siblings, open, toks)
+nodes cur_info ps (TokStart pos t as empty' : ts) = (node : siblings, open, toks)
   where
     new_name  = annotName new_info t
+    prefixes  = filter (/= "xmlns") $ mapMaybe qPrefix (t : [ k | Attr k _ <- as ])
+    nsfail    = any (==Nothing) [ lookup pfx (fst new_info) | pfx <- prefixes ]
+    rsvnsfail = not (all checkNS as)
     new_info  = foldr addNS cur_info as
-    node      = ElemF Element { elName    = new_name
+    node | rsvnsfail = Failure pos "invalid namespace declaration"
+         | nsfail    = Failure pos "undefined namespace prefix"
+         | otherwise =
+                ElemF Element { elName    = new_name
                               , elAttribs = map (annotAttr new_info) as
                               , elContent = children
                               }
@@ -138,10 +171,30 @@ annotAttr ns a@(Attr { attrKey = k}) =
     (Nothing, _) -> a
     _            -> a { attrKey = annotName ns k }
 
-
 addNS :: Attr -> NSInfo -> NSInfo
 addNS (Attr { attrKey = key, attrVal = val }) (ns,def) =
   case (qPrefix key, qLName key) of
     (Nothing,"xmlns") -> (ns, if T.null val then Nothing else Just (URI (TS.fromText val)))
+    (Just "xmlns", "xml") -> (ns,def)
     (Just "xmlns", k) -> ((unLName k, URI (TS.fromText val)) : ns, def)
     _                 -> (ns,def)
+
+-- | Check rules imposed on reserved namespaces by https://www.w3.org/TR/xml-names/
+checkNS :: Attr -> Bool
+checkNS = \case
+    (Attr (QName { qPrefix = Just "xmlns", qLName = "xmlns"}) _  ) -> False
+    (Attr (QName { qPrefix = Just "xmlns", qLName = "xml"})   uri) -> uri == xmlNamesNS'
+    (Attr (QName { qPrefix = Just "xmlns", qLName = _})       uri) -> isNotRsvd uri
+    (Attr (QName { qPrefix = Nothing     , qLName = "xmlns"}) uri) -> isNotRsvd uri
+    _                                                              -> True
+  where
+    xmlNamesNS' = TS.toText (unURI xmlNamesNS)
+    xmlnsNS'    = TS.toText (unURI xmlnsNS)
+    isNotRsvd uri = not (uri == xmlNamesNS' || uri == xmlnsNS' || uri == "")
+
+xmlNamesNS :: URI
+xmlNamesNS = URI "http://www.w3.org/XML/1998/namespace"
+
+xmlnsNS :: URI
+xmlnsNS = URI "http://www.w3.org/2000/xmlns/"
+

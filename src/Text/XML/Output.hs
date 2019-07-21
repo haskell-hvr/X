@@ -16,7 +16,6 @@ module Text.XML.Output
   ) where
 
 import           Common
-import           Data.Char
 import qualified Data.Text       as T
 import qualified Data.Text.Lazy  as TL
 import qualified Data.Text.Short as TS
@@ -38,13 +37,14 @@ xml_header = "<?xml version='1.0' ?>"
 
 --------------------------------------------------------------------------------
 data ConfigPP = ConfigPP
-  { prettify :: !Bool
+  { prettify      :: !Bool
+  , allowEmptyTag :: QName -> Bool
   }
 
 -- | Default pretty printing configuration.
 --  * Always use abbreviate empty tags.
 defaultConfigPP :: ConfigPP
-defaultConfigPP = ConfigPP { prettify = False }
+defaultConfigPP = ConfigPP { prettify = False, allowEmptyTag = const True }
 
 {-
 -- | A configuration that tries to make things pretty
@@ -76,12 +76,13 @@ ppContentS c i x xs = case x of
   Elem e -> ppElementS c i e xs
   Text t -> ppCDataS c i t xs
   CRef r -> showCRefS r xs
+  Proc p -> ppProcS p xs
+  Comm t -> ppCommS t xs
 
 ppElementS         :: ConfigPP -> String -> Element -> ShowS
 ppElementS c i e xs = i ++ (tagStart (elName e) (elAttribs e) $
   case elContent e of
-    [] | "?" `TS.isPrefixOf` unLName (qLName name) -> " ?>" ++ xs
-       | otherwise                                 -> " />" ++ xs
+    [] | allowEmptyTag c name -> " />" ++ xs
     [Text t] -> ">" ++ ppCDataS c "" t (tagEnd name xs)
     cs -> '>' : nl ++ foldr ppSub (i ++ tagEnd name xs) cs
       where ppSub e1 = ppContentS c (sp ++ i) e1 . showString nl
@@ -98,6 +99,12 @@ ppCDataS c i t xs   = i ++ if cdVerbatim t /= CDataText || not (prettify c)
   where cons         :: Char -> String -> String
         cons '\n' ys = "\n" ++ i ++ ys
         cons y ys    = y : ys
+
+ppCommS :: Comment -> ShowS
+ppCommS (Comment t) xs = "<!--" ++ T.unpack t ++ "-->" ++ xs
+
+ppProcS :: PI -> ShowS
+ppProcS (PI tgt dat) xs = "<?" ++ TS.unpack tgt ++ " " ++ T.unpack dat ++ "?>" ++ xs
 
 --------------------------------------------------------------------------------
 
@@ -125,30 +132,35 @@ showCDataS cd =
    CDataRaw      -> \ xs -> T.unpack (cdData cd) ++ xs
 
 --------------------------------------------------------------------------------
-escCData           :: String -> ShowS
+escCData :: String -> ShowS
 escCData (']' : ']' : '>' : cs) = showString "]]]]><![CDATA[>" . escCData cs
 escCData (c : cs)               = showChar c . escCData cs
 escCData []                     = id
 
-escChar            :: Char -> ShowS
+escChar :: Char -> ShowS
 escChar c = case c of
-  '<'   -> showString "&lt;"
-  '>'   -> showString "&gt;"
-  '&'   -> showString "&amp;"
-  '"'   -> showString "&quot;"
-  -- we use &#39 instead of &apos; because IE apparently has difficulties
-  -- rendering &apos; in xhtml.
-  -- Reported by Rohan Drape <rohan.drape@gmail.com>.
-  '\''  -> showString "&#39;"
+  '<'    -> showString "&lt;"
+  '>'    -> showString "&gt;" -- only text-nodes
+  '&'    -> showString "&amp;"
+  '\x0D' -> showString "&#xD;"
+  _      -> showChar c
 
-  -- NOTE: We escape '\r' explicitly because otherwise they get lost
-  -- when parsed back in because of then end-of-line normalization rules.
-  _ | isPrint c || c == '\n' -> showChar c
-    | otherwise -> showString "&#" . shows oc . showChar ';'
-      where oc = ord c
+escCharAttr :: Char -> ShowS
+escCharAttr c = case c of
+  '<'    -> showString "&lt;"
+  '&'    -> showString "&amp;"
+  '"'    -> showString "&quot;" -- only attr
+  '\x0D' -> showString "&#xD;"
+  '\x0A' -> showString "&#xA;" -- only attr
+  '\x09' -> showString "&#x9;" -- only attr
+  _      -> showChar c
+
 
 escStr             :: String -> ShowS
 escStr cs rs        = foldr escChar rs cs
+
+escStrAttr             :: String -> ShowS
+escStrAttr cs rs        = foldr escCharAttr rs cs
 
 tagEnd             :: QName -> ShowS
 tagEnd qn rs        = '<':'/':showQName qn ++ '>':rs
@@ -158,7 +170,7 @@ tagStart qn as rs   = '<':showQName qn ++ as_str ++ rs
  where as_str       = if null as then "" else ' ' : unwords (map showAttr as)
 
 showAttr           :: Attr -> String
-showAttr (Attr qn v) = showQName qn ++ '=' : '"' : escStr (T.unpack v) "\""
+showAttr (Attr qn v) = showQName qn ++ '=' : '"' : escStrAttr (T.unpack v) "\""
 
 showQName          :: QName -> String
 showQName q         = pre ++ showLName (qLName q)

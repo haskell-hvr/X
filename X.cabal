@@ -11,7 +11,7 @@ copyright:       (c) 2007-2008 Galois Inc.,
 
 synopsis:        A light-weight XML library
 category:        Text, XML
-bug-reports:     https://github.com/hvr/issues
+bug-reports:     https://github.com/hvr/X/issues
 description:
   Light-weight XML library derived from the [`xml` package](http://hackage.haskell.org/package/xml)
   for simple parsing and creation of XML documents.
@@ -29,6 +29,7 @@ library
 
   other-modules:
       Common
+      Utils
       Text.XML.Lexer
 
   build-depends:

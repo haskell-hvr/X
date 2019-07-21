@@ -3,6 +3,7 @@
 {-# LANGUAGE DeriveGeneric        #-}
 {-# LANGUAGE FlexibleInstances    #-}
 {-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 -- |
 -- Module    : Text.XML.Lexer
@@ -14,11 +15,13 @@ module Text.XML.Lexer where
 
 import           Common
 import           Text.XML.Types
+import           Utils
 
-import qualified Data.Text      as TS
-import qualified Data.Text      as T
-import qualified Data.Text.Lazy as TL
-import           Numeric        (readHex)
+import           Data.Char       (isAsciiLower, isAsciiUpper, isDigit, toLower)
+import qualified Data.Text       as T
+import qualified Data.Text.Lazy  as TL
+import qualified Data.Text.Short as TS
+import           Numeric         (readHex)
 
 class XmlSource s where
   uncons :: s -> Maybe (Char,s)
@@ -27,8 +30,8 @@ instance XmlSource String where
   uncons (c:s) = Just (c,s)
   uncons ""    = Nothing
 
-instance XmlSource TS.Text where
-  uncons = TS.uncons
+instance XmlSource T.Text where
+  uncons = T.uncons
 
 instance XmlSource TL.Text where
   uncons = TL.uncons
@@ -59,6 +62,10 @@ data Token              = TokStart !Pos QName [Attr] Bool
                         | TokCRef       ShortText -- ^ character entity reference
                         | TokText       CData     -- ^ character data
                         | TokError !Pos String    -- ^ Lexer error
+                        | TokXmlDecl    XmlDeclaration
+                        | TokComment    Comment
+                        | TokPI    !Pos PI
+                        | TokDTD        Text
                         deriving (Show,Data,Typeable,Generic)
 
 instance NFData Token
@@ -68,62 +75,165 @@ eofErr = [TokError (-1) "Premature EOF"]
 
 -- | Run XML lexer over 'XmlSource'
 scanXML :: XmlSource source => source -> [Token]
-scanXML = tokens' . go 0
+scanXML = tokens0 . eolNorm . go 0
   where
     go !n src = case uncons src of
       Just (c,src') -> (n,c) : go (n+1) src'
       Nothing       -> []
 
 
+{-
+
+> [XML 1.0] 2.11 End-of-Line Handling
+>
+> [...] the XML processor must behave as if it normalized all line breaks
+> in external parsed entities (including the document entity) on input,
+> before parsing, by translating both the two-character sequence #xD #xA
+> and any #xD that is not followed by #xA to a single #xA character.
+
+-}
+eolNorm :: LString -> LString
+eolNorm []                         = []
+eolNorm ((_,'\xD'):c@(_,'\xA'):cs) = c         : eolNorm cs
+eolNorm ((n,'\xD'):cs)             = (n,'\xA') : eolNorm cs
+eolNorm (c:cs)                     = c         : eolNorm cs
+
+
+
+tokens0 :: LString -> [Token]
+-- tokens0 ((_,'<'):(_,'?'):(_,'x'):(_,'m'):(_,'l'):(_,c):cs)
+--   | isS c = go1 (dropSpace cs)
+--   where
+--     go1 ((_,'v'):(_,'e'):(_,'r'):(_,'s'):(_,'i'):(_,'o'):(_,'n'):cs)
+tokens0 cs = tokens' cs
+
+
 tokens' :: LString -> [Token]
-tokens' ((_,'<') : c@(_,'!') : cs) = special c cs
+tokens' ((_,'<') : (_,'!') : cs) = special cs
+tokens' ((n,'<') : (_,'?') : cs) = procins n cs
 tokens' ((_,'<') : cs) = tag cs
 tokens' [] = []
-tokens' cs@((_,_):_) = let (as,bs) = breakn ('<' ==) cs
-                       in map cvt (decode_text as) ++ tokens' bs
+tokens' cs@((n,_):_) = let (as,bs) = breakn ('<' ==) cs
+                       in foldr cvt (tokens' bs) (decode_text as)
 
   -- XXX: Note, some of the lines might be a bit inacuarate
-  where cvt (TxtBit x)  = TokText CData { cdVerbatim = CDataText
-                                        , cdData = fromString x
-                                        }
-        cvt (CRefBit x) = case cref_to_char x of
-                            Just c -> TokText CData { cdVerbatim = CDataText
-                                                    , cdData = T.singleton c
-                                                    }
-                            Nothing -> TokCRef (fromString x)
-
-
-special :: LChar -> LString -> [Token]
-special (_,_) ((_,'-') : (_,'-') : cs) = skip cs
   where
-    skip ((pos,'-') : (_,'-') : (_,x) : ds)
-      | x == '>' = tokens' ds
-      | otherwise = [TokError pos "double hyphen within comment"]
-    skip (_ : ds)                           = skip ds
-    skip []                                 = eofErr
+    cvt (TxtBit x)  cont
+      | T.all isChar dat = TokText CData { cdVerbatim = CDataText, cdData = dat } : cont
+      | otherwise        = [TokError n "invalid code-point in text content"]
+      where
+        dat = T.pack x
+    cvt (CRefBit x) cont = case cref_to_char x of
+      Just c
+        | isChar c -> TokText CData { cdVerbatim = CDataText, cdData = T.singleton c } : cont
+        | otherwise -> [TokError n "invalid character reference"]
+      Nothing -> TokCRef (fromString x) : cont
 
-special _ ((_,'[') : (_,'C') : (_,'D') : (_,'A') : (_,'T') : (_,'A') : (_,'[') : cs) =
+--
+-- PI        ::= '<?' PITarget (S (Char* - (Char* '?>' Char*)))? '?>'
+-- PITarget  ::= Name - (('X' | 'x') ('M' | 'm') ('L' | 'l'))
+procins :: Pos -> LString -> [Token]
+procins n0 = go ""
+  where
+    go acc ((_,'?') : (_,'>') : ds) = mkPI (reverse acc) (tokens' ds)
+    go acc ((_,c) : ds)             = go (c:acc) ds
+    go _   []                       = eofErr
+
+    mkPI :: String -> [Token] -> [Token]
+    mkPI s0 ts
+      | tgt == "xml"  = mkXMLDecl s' ts
+      | map toLower (TS.unpack tgt) == "xml" = [TokError (n0+2) "Invalid PI name"]
+      | otherwise     = TokPI n0 (PI tgt payload) : ts
+      where
+        (tgt0,s') = break isS s0
+        tgt = TS.fromString tgt0
+        payload = T.pack (dropWhile isS s')
+
+    {-
+       XMLDecl      ::=  '<?xml' VersionInfo EncodingDecl? SDDecl? S? '?>'
+       VersionInfo  ::=  S 'version' Eq ("'" VersionNum "'" | '"' VersionNum '"')
+       EncodingDecl ::=  S 'encoding' Eq ('"' EncName '"' | "'" EncName "'" )
+       SDDecl       ::=  S 'standalone' Eq (("'" ('yes' | 'no') "'") | ('"' ('yes' | 'no') '"'))
+
+       Eq           ::=  S? '=' S?
+
+       VersionNum   ::=  '1.0'
+       EncName      ::=  [A-Za-z] ([A-Za-z0-9._] | '-')*
+
+    -}
+
+    -- needs serious rewrite...
+    mkXMLDecl s0 ts
+      | n0 > 0    = [TokError n0 "XML declaration allowed only at the start of the document"]
+      | otherwise = go1 (simpleTokenize s0)
+      where
+        go1 ("":"version":"=":ver:rest)
+          | Just "1.0" <- unbrack ver = go2 rest
+        go1 _ = [TokError n0 "Unsupported or missing 'version' in XML declaration"]
+
+        go2 ("":"encoding":"=":enc:rest)
+          | Just enc' <- unbrack enc, isEnc enc' = go3 (Just $ TS.pack enc') rest
+          | otherwise = [TokError n0 "Bad 'encoding' value in XML declaration"]
+        go2 rest = go3 Nothing rest
+
+        go3 enc ("":"standalone":"=":sd:rest)
+          | Just sd' <- unbrack sd, Just sd'' <- isBoo sd' = go4 enc (Just sd'') rest
+          | otherwise = [TokError n0 "Bad 'standalone' value in XML declaration"]
+        go3 enc rest = go4 enc Nothing rest
+
+        go4 enc sd [] = TokXmlDecl (XmlDeclaration enc sd) : ts
+        go4 enc sd [""] = TokXmlDecl (XmlDeclaration enc sd) : ts
+        go4 _ _ _ = [TokError n0 "unexpected or malformed attribute in XML declaration"]
+
+        isEnc [] = False
+        isEnc (c:cs) = (isAsciiLower c || isAsciiUpper c) &&
+                       all (\c' -> isAsciiLower c' || isAsciiUpper c' || isDigit c' || c' `elem` ['.','_','-']) cs
+
+        isBoo "yes" = Just True
+        isBoo "no"  = Just False
+        isBoo _     = Nothing
+
+        unbrack ('\'':xs) | Just (s,'\'') <- unsnoc xs = Just s
+        unbrack ('"':xs)  | Just (s,'"')  <- unsnoc xs = Just s
+        unbrack _         = Nothing
+
+
+special :: LString -> [Token]
+-- <!--
+--
+-- Comment ::=  '<!--' ((Char - '-') | ('-' (Char - '-')))* '-->'
+special ((_,'-') : (_,'-') : cs) = go "" cs
+  where
+    go acc ((n,'-') : (_,'-') : (_,x) : ds)
+      | x == '>' = TokComment (Comment $ T.pack (reverse acc)) : tokens' ds
+      | otherwise = [TokError n "double hyphen within comment"]
+    go acc ((_,c) : ds) = go (c:acc) ds
+    go _ [] = eofErr
+
+-- <![CDATA[
+special ((n,'[') : (_,'C') : (_,'D') : (_,'A') : (_,'T') : (_,'A') : (_,'[') : cs) =
   let (xs,ts) = cdata cs
-  in TokText CData { cdVerbatim = CDataVerbatim
-                   , cdData = fromString xs
-                   } : tokens' ts
-  where cdata ((_,']') : (_,']') : (_,'>') : ds) = ([],ds)
-        cdata ((_,d) : ds)  = let (xs,ys) = cdata ds in (d:xs,ys)
-        cdata [] = ([],[])
+      dat = T.pack xs
+  in if T.all isChar dat then TokText CData { cdVerbatim = CDataVerbatim, cdData = dat } : tokens' ts
+                         else [TokError (n-2) "invalid code-point in CDATA block"]
+  where
+    cdata ((_,']') : (_,']') : (_,'>') : ds) = ([],ds)
+    cdata ((_,d) : ds)  = let (xs,ys) = cdata ds in (d:xs,ys)
+    cdata [] = ([],[])
 
-special _ cs =
-  let (xs,ts) = munch "" 0 cs
-  in TokText CData { cdVerbatim = CDataRaw
-                   , cdData = fromString ('<':'!':reverse xs)
-                   } : tokens' ts
-  where munch acc nesting ((_,'>') : ds)
-         | nesting == (0::Int) = ('>':acc,ds)
-         | otherwise           = munch ('>':acc) (nesting-1) ds
-        munch acc nesting ((_,'<') : ds)
-         = munch ('<':acc) (nesting+1) ds
-        munch acc n ((_,x) : ds) = munch (x:acc) n ds
-        munch acc _ [] = (acc,[]) -- unterminated DTD markup
---special c cs = tag (c : cs) -- invalid specials are processed as tags
+-- <!DOCTYPE
+special ((_,'D') : (_,'O') : (_,'C') : (_,'T') : (_,'Y') : (_,'P') : (_,'E') : cs) =
+  let (xs,ts) = munch "" 0 cs in TokDTD (T.pack (reverse xs)) : tokens' ts
+  where
+    munch acc nesting ((_,'>') : ds)
+     | nesting == (0::Int)            = ('>':acc,ds)
+     | otherwise                      = munch ('>':acc) (nesting-1) ds
+    munch acc nesting ((_,'<') : ds)  = munch ('<':acc) (nesting+1) ds
+    munch acc n ((_,x) : ds)          = munch (x:acc) n ds
+    munch acc _ []                    = (acc,[]) -- unterminated DTD markup
+
+special ((n,_):_) = [TokError (n-1) "invalid element name"]
+special [] = eofErr
 
 qualName :: LString -> (QName,LString)
 qualName xs = (QName { qURI    = Nothing
@@ -136,7 +246,7 @@ qualName xs = (QName { qURI    = Nothing
                 (q1,_:n1) -> (Just q1, n1)
                 _         -> (Nothing, as)
 
-    endName x = isSpace x || x == '=' || x == '>' || x == '/'
+    endName x = isS x || x == '=' || x == '>' || x == '/'
 
 {-
 
@@ -149,41 +259,47 @@ Attribute     ::=  Name Eq AttValue
 -}
 tag :: LString -> [Token]
 tag ((p,'/') : cs)
+  | isValidQName n
   = TokEnd p n : case dropSpace ds of
                    (_,'>') : es -> tokens' es
                    -- tag was not properly closed...
                    (p',_) : _   -> [TokError p' "expected '>'"]
                    []           -> eofErr
+  | otherwise = [TokError p "invalid element name"]
   where
     (n,ds) = qualName (dropSpace cs)
 tag [] = eofErr
-tag cs
-  = TokStart (fst (head cs)) n as b : ts
+tag cs@((pos,_):_)
+  | not (isValidQName n) = [TokError pos "invalid element name"]
+  | not (all (isValidQName . attrKey) as) = [TokError pos "invalid attribute name"]
+  | not (all (T.all isChar . attrVal) as) = [TokError pos "invalid attribute value"]
+  | otherwise            = TokStart pos n as b : ts
   where
     (n,ds)    = qualName cs
     (as,b,ts) = attribs (dropSpace ds)
 
 
-attribs          :: LString -> ([Attr], Bool, [Token])
-attribs cs        = case cs of
-                      (_,'>') : ds -> ([], False, tokens' ds)
-                      (_,'/') : ds -> ([], True, case ds of
-                                              (_,'>') : es -> tokens' es
-                                              (pos,_) : _ -> [TokError pos "expected '>'"]
-                                              [] -> eofErr)
-                      (_,'?') : (_,'>') : ds -> ([], True, tokens' ds)
+attribs :: LString -> ([Attr], Bool, [Token])
+attribs cs = case cs of
+    (_,'>') : ds -> ([], False, tokens' ds)
+    (_,'/') : ds -> ([], True, case ds of
+                            (_,'>') : es -> tokens' es
+                            (pos,_) : _  -> [TokError pos "expected '>'"]
+                            []           -> eofErr)
+    (_,'?') : (_,'>') : ds -> ([], True, tokens' ds)
 
-                      -- doc ended within a tag..
-                      []       -> ([],False,eofErr)
+    -- doc ended within a tag..
+    []       -> ([],False,eofErr)
 
-                      _        -> let (a,cs1) = attrib cs
-                                      (as,b,ts) = attribs cs1
-                                  in (a:as,b,ts)
+    _        -> let (a,cs1) = attrib cs
+                    (as,b,ts) = attribs cs1
+                in (a:as,b,ts)
 
-attrib             :: LString -> (Attr,LString)
-attrib cs           = let (ks,cs1)  = qualName cs
-                          (vs,cs2)  = attr_val (dropSpace cs1)
-                      in ((Attr ks (fromString $ decode_attr vs)),dropSpace cs2)
+attrib :: LString -> (Attr,LString)
+attrib cs = ((Attr ks (fromString $ decode_attr vs)),dropSpace cs2)
+  where
+    (vs,cs2) = attr_val (dropSpace cs1)
+    (ks,cs1) = qualName cs
 
 {-
 AttValue       ::=  '"' ([^<&"] | Reference)* '"'
@@ -192,28 +308,16 @@ AttValue       ::=  '"' ([^<&"] | Reference)* '"'
 attr_val           :: LString -> (String,LString)
 attr_val ((_,'=') : cs0) = string (dropSpace cs0)
   where
-    -- | Match the value for an attribute.  For malformed XML we do
-    -- our best to guess the programmer's intention.
+    -- | Match the value for an attribute.
     string :: LString -> (String,LString)
-    string ((_,'"') : cs)   = break' ('"' ==) cs
-    string ((_,'\'') : cs)  = break' ('\'' ==) cs
-    -- Allow attributes that are not enclosed by anything.
-    string cs           = breakn eos cs
-      where eos x = isSpace x || x == '>' || x == '/'
-attr_val cs             = ("",cs)
+    string ((_,'"') : cs)  = break' ('"' ==) cs
+    string ((_,'\'') : cs) = break' ('\'' ==) cs
+    -- hack: inject invalid \0 character to trigger failure in caller
+    string cs              = ("\0",cs)
+attr_val cs = ("\0",cs)
 
-
-{-
-
-S ::= (#x20 | #x9 | #xD | #xA)+
-
--}
 dropSpace :: LString -> LString
-dropSpace = dropWhile (isSpace . snd)
-
-isSpace :: Char -> Bool
-isSpace = (`elem` "\x20\x09\x0D\x0A")
-
+dropSpace = dropWhile (isS . snd)
 
 break' :: (a -> Bool) -> [(b,a)] -> ([a],[(b,a)])
 break' p xs         = let (as,bs) = breakn p xs
@@ -224,13 +328,12 @@ break' p xs         = let (as,bs) = breakn p xs
 breakn :: (a -> Bool) -> [(b,a)] -> ([a],[(b,a)])
 breakn p l = (map snd as,bs) where (as,bs) = break (p . snd) l
 
-
 decode_attr :: String -> String
 decode_attr cs = concatMap cvt (decode_text cs)
   where cvt (TxtBit x) = x
         cvt (CRefBit x) = case cref_to_char x of
-                            Just c  -> [c]
-                            Nothing -> '&' : x ++ ";"
+          Just c  -> [c]
+          Nothing -> "\0" -- '&' : x ++ ";"
 
 data Txt = TxtBit String | CRefBit String deriving Show
 
@@ -265,3 +368,27 @@ cvt_char x
   | fromEnum (minBound :: Char) <= x && x <= fromEnum (maxBound::Char)
                 = Just (toEnum x)
   | otherwise = Nothing
+
+
+simpleTokenize :: String -> [String]
+simpleTokenize [] = []
+simpleTokenize (c:cs)
+  | isSorEQ c = let (sep,rest) = span isSorEQ (c:cs)
+                in  (if ('=' `elem` sep) then "=" else "") : simpleTokenize rest
+
+  | c == '\'' = case break (== '\'') cs of
+                  (_,"")       -> [c:cs]
+                  (str,_:rest) -> (c:str++"'") : simpleTokenize rest
+  | c == '"' = case break (== '"') cs of
+                  (_,"")       -> [c:cs]
+                  (str,_:rest) -> (c:str++"\"") : simpleTokenize rest
+  | otherwise = let (t,rest) = break isSorEQ (c:cs)
+                in t : simpleTokenize rest
+  where
+    isSorEQ x = isS x || x == '='
+
+
+isValidQName :: QName -> Bool
+isValidQName (QName { qPrefix = Just pfx, qLName = LName ln }) = isNCName (TS.unpack pfx) && isNCName (TS.unpack ln)
+isValidQName (QName { qPrefix = Nothing, qLName = LName ln })  = isNCName (TS.unpack ln)
+

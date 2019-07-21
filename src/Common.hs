@@ -20,3 +20,4 @@ import           Data.Text.Short     as X (ShortText)
 import           Data.Traversable    as X (Traversable, traverse)
 import           Data.Typeable       as X (Typeable)
 import           GHC.Generics        as X (Generic)
+

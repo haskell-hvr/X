@@ -5,7 +5,6 @@
 {-# LANGUAGE DeriveTraversable          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
-
 -- |
 -- Module    : Text.XML.Types
 -- Copyright : (c) Galois, Inc. 2007
@@ -18,11 +17,29 @@ module Text.XML.Types where
 
 import           Common
 
+-- | Denotes the @<?xml version="1.0" encoding="..." standalone="..." ?>@ declaration
+data XmlDeclaration = XmlDeclaration (Maybe ShortText) (Maybe Bool)
+  deriving (Show, Typeable, Data, Generic)
+
+instance NFData XmlDeclaration
+
+data PI = PI
+  { piTarget :: !ShortText
+  , piData   :: !Text
+  } deriving (Show, Typeable, Data, Generic)
+
+instance NFData PI
+
+newtype Comment = Comment Text
+  deriving (Show, Typeable, Data, Generic, NFData)
+
 -- | XML content
 data Content
   = Elem Element
   | Text CData
   | CRef !ShortText
+  | Proc PI
+  | Comm Comment
   deriving (Show, Typeable, Data, Generic)
 
 instance NFData Content
@@ -84,11 +101,19 @@ instance Ord QName where
 
 -- | XML local names
 newtype LName = LName { unLName :: ShortText }
-  deriving (Show, Ord, Eq, Typeable, Data, IsString, NFData, Generic)
+  deriving (Ord, Eq, Typeable, Data, IsString, NFData, Generic)
+
+-- due to the IsString instance we can just drop the constructor name
+instance Show LName where
+  showsPrec p (LName s) = showsPrec p s
 
 -- | URIs resembling @anyURI@
 newtype URI = URI { unURI :: ShortText }
-  deriving (Show, Ord, Eq, Typeable, Data, IsString, NFData, Generic)
+  deriving (Ord, Eq, Typeable, Data, IsString, NFData, Generic)
+
+-- due to the IsString instance we can just drop the constructor name
+instance Show URI where
+  showsPrec p (URI s) = showsPrec p s
 
 -- | Position expressed in number of code-points
 --
