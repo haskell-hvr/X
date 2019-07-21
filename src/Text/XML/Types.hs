@@ -1,4 +1,7 @@
---------------------------------------------------------------------
+{-# LANGUAGE DeriveDataTypeable         #-}
+{-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+
 -- |
 -- Module    : Text.XML.Types
 -- Copyright : (c) Galois, Inc. 2007
@@ -7,57 +10,60 @@
 --
 -- Basic XML types.
 --
-
-{-# LANGUAGE DeriveDataTypeable #-}
 module Text.XML.Types where
 
 import           Common
 
 -- | XML content
-data Content  = Elem Element
-              | Text CData
-              | CRef !ShortText
-                deriving (Show, Typeable, Data)
+data Content
+  = Elem Element
+  | Text CData
+  | CRef !ShortText
+  deriving (Show, Typeable, Data, Generic)
+
+instance NFData Content
 
 -- | XML elements
-data Element  = Element {
-                  elName    :: !QName,
-                  elAttribs :: [Attr],
-                  elContent :: [Content]
-                } deriving (Show, Typeable, Data)
+data Element  = Element
+  { elName    :: !QName
+  , elAttribs :: [Attr]
+  , elContent :: [Content]
+  } deriving (Show, Typeable, Data, Generic)
+
+instance NFData Element
 
 -- | XML attributes
 data Attr     = Attr
-  { attrKey :: QName
-  , attrVal :: Text
-  } deriving (Eq, Ord, Show, Typeable, Data)
+  { attrKey :: !QName
+  , attrVal :: !Text
+  } deriving (Eq, Ord, Show, Typeable, Data, Generic)
+
+instance NFData Attr
 
 -- | XML CData
-data CData    = CData {
-                  cdVerbatim :: !CDataKind,
-                  cdData     :: !Text
-                } deriving (Show, Typeable, Data)
+data CData    = CData
+  { cdVerbatim :: !CDataKind
+  , cdData     :: !Text
+  } deriving (Show, Typeable, Data, Generic)
+
+instance NFData CData
 
 data CDataKind
- = CDataText      -- ^ Ordinary character data; pretty printer escapes &, < etc.
- | CDataVerbatim  -- ^ Unescaped character data; pretty printer embeds it in <![CDATA[..
- | CDataRaw       -- ^ As-is character data; pretty printer passes it along without any escaping or CDATA wrap-up.
- deriving ( Eq, Show, Typeable, Data )
+  = CDataText      -- ^ Ordinary character data; pretty printer escapes &, < etc.
+  | CDataVerbatim  -- ^ Unescaped character data; pretty printer embeds it in <![CDATA[..
+  | CDataRaw       -- ^ As-is character data; pretty printer passes it along without any escaping or CDATA wrap-up.
+  deriving (Eq, Show, Typeable, Data, Generic)
+
+instance NFData CDataKind
 
 -- | XML qualified names
 data QName    = QName
   { qLName  :: !LName
   , qURI    :: Maybe URI
   , qPrefix :: Maybe ShortText
-  } deriving (Show, Typeable, Data)
+  } deriving (Show, Typeable, Data, Generic)
 
--- | XML local names
-newtype LName = LName { unLName :: ShortText }
-  deriving (Show, Ord, Eq, Typeable, Data)
-
--- | URIs resembling @anyURI@
-newtype URI = URI { unURI :: ShortText }
-  deriving (Show, Ord, Eq, Typeable, Data)
+instance NFData QName
 
 instance Eq QName where
   q1 == q2  = compare q1 q2 == EQ
@@ -70,23 +76,35 @@ instance Ord QName where
                (u1,u2)           -> compare u1 u2
       x   -> x
 
+-- | XML local names
+newtype LName = LName { unLName :: ShortText }
+  deriving (Show, Ord, Eq, Typeable, Data, IsString, NFData, Generic)
+
+-- | URIs resembling @anyURI@
+newtype URI = URI { unURI :: ShortText }
+  deriving (Show, Ord, Eq, Typeable, Data, IsString, NFData, Generic)
 
 -- blank elements --------------------------------------------------------------
 
 -- | Blank names
 blank_name :: QName
-blank_name = QName { qLName = LName mempty, qURI = Nothing, qPrefix = Nothing }
+blank_name = QName
+  { qLName  = LName mempty
+  , qURI    = Nothing
+  , qPrefix = Nothing
+  }
 
 -- | Blank cdata
 blank_cdata :: CData
-blank_cdata = CData { cdVerbatim = CDataText, cdData = mempty }
+blank_cdata = CData
+  { cdVerbatim = CDataText
+  , cdData     = mempty
+  }
 
 -- | Blank elements
 blank_element :: Element
 blank_element = Element
   { elName    = blank_name
-  , elAttribs = []
-  , elContent = []
+  , elAttribs = mempty
+  , elContent = mempty
   }
-
-

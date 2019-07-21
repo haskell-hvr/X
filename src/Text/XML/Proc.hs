@@ -7,15 +7,12 @@
 --
 --------------------------------------------------------------------
 
-
 module Text.XML.Proc where
 
 import           Common
 import           Text.XML.Types
 
 import           Data.List      (find)
-import           Data.Maybe     (listToMaybe)
-
 import qualified Data.Text      as T
 
 -- | Get the text value of an XML element.  This function
@@ -109,7 +106,3 @@ lookupAttrBy p as   = attrVal `fmap` find (p . attrKey) as
 -- satisfies the given predicate.
 findAttrBy         :: (QName -> Bool) -> Element -> Maybe Text
 findAttrBy p e      = lookupAttrBy p (elAttribs e)
-
-
-
-

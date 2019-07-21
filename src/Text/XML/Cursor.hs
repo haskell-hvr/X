@@ -1,3 +1,6 @@
+{-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE DeriveGeneric      #-}
+
 --------------------------------------------------------------------
 -- |
 -- Module    : Text.XML.Cursor
@@ -9,7 +12,6 @@
 -- an XML document.  This implementation is based on the general
 -- tree zipper written by Krasimir Angelov and Iavor S. Diatchki.
 --
-
 module Text.XML.Cursor
   ( Tag(..), getTag, setTag, fromTag
   , Cursor(..), Path
@@ -66,13 +68,15 @@ module Text.XML.Cursor
 
   ) where
 
-import           Control.Monad  (mplus)
-import           Data.Maybe     (isNothing)
+import           Common
 import           Text.XML.Types
 
-data Tag = Tag { tagName    :: QName
-               , tagAttribs :: [Attr]
-               } deriving (Show)
+data Tag = Tag
+  { tagName    :: QName
+  , tagAttribs :: [Attr]
+  } deriving (Show,Generic,Typeable,Data)
+
+instance NFData Tag
 
 getTag :: Element -> Tag
 getTag e = Tag { tagName = elName e
@@ -96,7 +100,9 @@ data Cursor = Cur
   , lefts   :: [Content]    -- ^ Siblings on the left, closest first.
   , rights  :: [Content]    -- ^ Siblings on the right, closest first.
   , parents :: Path -- ^ The contexts of the parent elements of this location.
-  } deriving (Show)
+  } deriving (Show,Generic,Typeable,Data)
+
+instance NFData Cursor
 
 -- Moving around ---------------------------------------------------------------
 
@@ -168,8 +174,8 @@ findChild p loc =
 -- either the first child, right sibling, or the right sibling of a parent that
 -- has one.
 nextDF :: Cursor -> Maybe Cursor
-nextDF c = firstChild c `mplus` up c
-  where up x = right x `mplus` (up =<< parent x)
+nextDF c = firstChild c <|> up c
+  where up x = right x <|> (up =<< parent x)
 
 -- | Perform a depth first search for a descendant that satisfies the
 -- given predicate.

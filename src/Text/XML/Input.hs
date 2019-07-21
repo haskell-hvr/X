@@ -67,7 +67,7 @@ nodes ns ps (TokText txt : ts) =
 
   in (Text txt { cdData = cdData txt `T.append` more } : es1, qs, ts1)
 
-nodes cur_info ps (TokStart _ t as empty : ts) = (node : siblings, open, toks)
+nodes cur_info ps (TokStart _ t as empty' : ts) = (node : siblings, open, toks)
   where
   new_name  = annotName new_info t
   new_info  = foldr addNS cur_info as
@@ -77,7 +77,7 @@ nodes cur_info ps (TokStart _ t as empty : ts) = (node : siblings, open, toks)
                            }
 
   (children,(siblings,open,toks))
-    | empty     = ([], nodes cur_info ps ts)
+    | empty'    = ([], nodes cur_info ps ts)
     | otherwise = let (es1,qs1,ts1) = nodes new_info (new_name:ps) ts
                   in (es1,
                       case qs1 of
