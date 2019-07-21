@@ -15,7 +15,7 @@ bug-reports:     https://github.com/hvr/issues
 description:
   Light-weight XML library derived from the [`xml` package](http://hackage.haskell.org/package/xml)
   for simple parsing and creation of XML documents.
-  It only depends on @base@, @bytestring@, @text@, and @text-short@.
+  It only depends on @base@, @deepseq@, @bytestring@, @text@, and @text-short@.
 
 library
   hs-source-dirs: src

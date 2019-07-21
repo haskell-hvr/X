@@ -1,6 +1,10 @@
 {-# LANGUAGE DeriveDataTypeable         #-}
+{-# LANGUAGE DeriveFoldable             #-}
+{-# LANGUAGE DeriveFunctor              #-}
 {-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE DeriveTraversable          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+
 
 -- |
 -- Module    : Text.XML.Types
@@ -23,14 +27,16 @@ data Content
 
 instance NFData Content
 
+type Element = Element' Content
+
 -- | XML elements
-data Element  = Element
+data Element' cnode  = Element
   { elName    :: !QName
   , elAttribs :: [Attr]
-  , elContent :: [Content]
-  } deriving (Show, Typeable, Data, Generic)
+  , elContent :: [cnode]
+  } deriving (Show, Typeable, Data, Generic, Functor, Foldable, Traversable)
 
-instance NFData Element
+instance NFData cnode => NFData (Element' cnode)
 
 -- | XML attributes
 data Attr     = Attr
@@ -83,6 +89,12 @@ newtype LName = LName { unLName :: ShortText }
 -- | URIs resembling @anyURI@
 newtype URI = URI { unURI :: ShortText }
   deriving (Show, Ord, Eq, Typeable, Data, IsString, NFData, Generic)
+
+-- | Position expressed in number of code-points
+--
+-- A negative value denotes EOF
+type Pos = Int
+
 
 -- blank elements --------------------------------------------------------------
 
