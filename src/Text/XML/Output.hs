@@ -84,11 +84,13 @@ import           Utils
 -- \"@\<?xml version='1.0' ?\>@\"
 --
 serializeXMLDoc :: Element -> TL.Text
-serializeXMLDoc = TL.pack . showTopElement
+serializeXMLDoc el
+  = serializeXMLRoot defaultSerializeXMLOptions
+    (Root (Just (XmlDeclaration Nothing Nothing)) [] Nothing el [])
 
 -- | Serialize a sequence of XML 'Content' nodes
 serializeXML :: [Content] -> TL.Text
-serializeXML = TL.pack . foldr (ppContentS defaultSerializeXMLOptions "") ""
+serializeXML = TL.pack . foldr (ppContentS defaultSerializeXMLOptions) ""
 
 
 -- | Default rendering options
@@ -113,7 +115,7 @@ serializeXMLRoot sopts Root{..} = TLB.toLazyText $ go $
        Nothing -> []
        Just (dtd,moreMisc) -> ("<!DOCTYPE" <+> TLB.fromText dtd <+> ">") : map bMisc moreMisc
     ) ++
-    [TLB.fromString (ppElementS sopts "" rootElement "")] ++
+    [TLB.fromString (ppElementS sopts rootElement "")] ++
     map bMisc rootPostElem
   where
     xmldecl = case rootXmlDeclaration of
@@ -129,91 +131,38 @@ serializeXMLRoot sopts Root{..} = TLB.toLazyText $ go $
     go [x]          = x
     go (x:xs@(_:_)) = x <+> TLB.singleton '\n' <+> go xs
 
-    bMisc (Left (Comment t)) = "<!--" <+> TLB.fromText t <+> "-->"
+    bMisc (Left (Comment t)) = "<!--" <+> TLB.fromText (T.replace "--" "-~" t) <+> "-->"
     bMisc (Right (PI tgt dat)) = "<?" <+> bFromShortText tgt <+> (if T.null dat then mempty else " ") <+> TLB.fromText dat <+> "?>"
 
-
--- ppElementS defaultSerializeXMLOptions "" c ""
-
--- | The XML 1.0 header
-xml_header :: String
-xml_header = "<?xml version='1.0' ?>"
-
 --------------------------------------------------------------------------------
-prettify :: SerializeXMLOptions -> Bool
-prettify _ = False
-
-{-
--- | A configuration that tries to make things pretty
--- (possibly at the cost of changing the semantics a bit
--- through adding white space.)
-prettySerializeXMLOptions     :: SerializeXMLOptions
-prettySerializeXMLOptions      = defaultSerializeXMLOptions { prettify = True }
-
--- | Pretty printing renders XML documents faithfully,
--- with the exception that whitespace may be added\/removed
--- in non-verbatim character data.
-ppTopElement       :: Element -> String
-ppTopElement        = ppcTopElement prettySerializeXMLOptions
-
--- | Pretty printing renders XML documents faithfully,
--- with the exception that whitespace may be added\/removed
--- in non-verbatim character data.
-ppcTopElement      :: SerializeXMLOptions -> Element -> String
-ppcTopElement c e   = unlines [xml_header,ppcElement c e]
-
--- | Pretty printing elements
-ppcElement         :: SerializeXMLOptions -> Element -> String
-ppcElement c e      = ppElementS c "" e ""
--}
 
 -- | Pretty printing content using ShowS
-ppContentS         :: SerializeXMLOptions -> String -> Content -> ShowS
-ppContentS c i x xs = case x of
-  Elem e -> ppElementS c i e xs
-  Text t -> ppCDataS c i t xs
-  CRef r -> showCRefS r xs
-  Proc p -> ppProcS p xs
-  Comm t -> ppCommS t xs
+ppContentS :: SerializeXMLOptions -> Content -> ShowS
+ppContentS c x xs = case x of
+    Elem e -> ppElementS c e xs
+    Text t -> ppCDataS t xs
+    CRef r -> showCRefS r xs
+    Proc p -> ppProcS p xs
+    Comm t -> ppCommS t xs
 
-ppElementS         :: SerializeXMLOptions -> String -> Element -> ShowS
-ppElementS c i e xs = i ++ (tagStart (elName e) (elAttribs e) $
-  case elContent e of
-    [] | allowEmptyTag c name -> " />" ++ xs
-    [Text t] -> ">" ++ ppCDataS c "" t (tagEnd name xs)
-    cs -> '>' : nl ++ foldr ppSub (i ++ tagEnd name xs) cs
-      where ppSub e1 = ppContentS c (sp ++ i) e1 . showString nl
-            (nl,sp)  = if prettify c then ("\n","  ") else ("","")
-  )
+ppElementS :: SerializeXMLOptions -> Element -> ShowS
+ppElementS c e xs = tagStart (elName e) (elAttribs e) $ case elContent e of
+    [] | allowEmptyTag c name -> "/>" ++ xs
+    [Text t]                  -> ">" ++ ppCDataS t (tagEnd name xs)
+    cs                        -> '>' : foldr (ppContentS c) (tagEnd name xs) cs
   where
     name = elName e
 
-ppCDataS           :: SerializeXMLOptions -> String -> CData -> ShowS
-ppCDataS c i t xs   = i ++ if cdVerbatim t /= CDataText || not (prettify c)
-                             then showCDataS t xs
-                             else foldr cons xs (showCData t)
-
-  where cons         :: Char -> String -> String
-        cons '\n' ys = "\n" ++ i ++ ys
-        cons y ys    = y : ys
+ppCDataS :: CData -> ShowS
+ppCDataS t xs = showCDataS t xs
 
 ppCommS :: Comment -> ShowS
-ppCommS (Comment t) xs = "<!--" ++ T.unpack t ++ "-->" ++ xs
+ppCommS (Comment t) xs = "<!--" ++ T.unpack (T.replace "--" "-~" t) ++ "-->" ++ xs
 
 ppProcS :: PI -> ShowS
 ppProcS (PI tgt dat) xs = "<?" ++ TS.unpack tgt ++ (if T.null dat then mempty else " ") ++ T.unpack dat ++ "?>" ++ xs
 
 --------------------------------------------------------------------------------
-
--- | Adds the <?xml?> header.
-showTopElement     :: Element -> String
-showTopElement c    = xml_header ++ showElement c
-
-showElement        :: Element -> String
-showElement c       = ppElementS defaultSerializeXMLOptions "" c ""
-
-showCData          :: CData -> String
-showCData c         = ppCDataS defaultSerializeXMLOptions "" c ""
 
 -- Note: crefs should not contain '&', ';', etc.
 showCRefS          :: ShortText -> ShowS
@@ -228,7 +177,7 @@ showCDataS cd =
                                            . showString "]]>"
    CDataRaw      -> \ xs -> T.unpack (cdData cd) ++ xs
 
---------------------------------------------------------------------------------
+
 escCData :: String -> ShowS
 escCData (']' : ']' : '>' : cs) = showString "]]]]><![CDATA[>" . escCData cs
 escCData (c : cs)               = showChar c . escCData cs
@@ -256,8 +205,8 @@ escCharAttr c = case c of
 escStr             :: String -> ShowS
 escStr cs rs        = foldr escChar rs cs
 
-escStrAttr             :: String -> ShowS
-escStrAttr cs rs        = foldr escCharAttr rs cs
+escStrAttr         :: String -> ShowS
+escStrAttr cs rs    = foldr escCharAttr rs cs
 
 tagEnd             :: QName -> ShowS
 tagEnd qn rs        = '<':'/':showQName qn ++ '>':rs
