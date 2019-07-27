@@ -157,3 +157,8 @@ infixr 6 <+>
 
 bFromShortText :: ShortText -> TLB.Builder
 bFromShortText = TLB.fromText . TS.toText
+
+bUnlines :: [TLB.Builder] -> TLB.Builder
+bUnlines []           = mempty
+bUnlines [x]          = x
+bUnlines (x:xs@(_:_)) = x <+> TLB.singleton '\n' <+> bUnlines xs

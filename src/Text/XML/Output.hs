@@ -96,19 +96,25 @@ serializeXML = TL.pack . foldr (ppContentS defaultSerializeXMLOptions) ""
 -- | Default rendering options
 --
 --  * Allow empty tags for all non-special elements
+--
+--  * Don't insert newlines between prolog/epilog nodes
+--
 defaultSerializeXMLOptions :: SerializeXMLOptions
 defaultSerializeXMLOptions = SerializeXMLOptions
-  { allowEmptyTag = const True
+  { serializeAllowEmptyTag     = const True
+  , serializeProEpilogAddNLs   = False
   }
 
--- | Options
+-- | Options for tweaking XML serialization output
 data SerializeXMLOptions = SerializeXMLOptions
-  { allowEmptyTag :: QName -> Bool
+  { serializeAllowEmptyTag   :: QName -> Bool
+  , serializeProEpilogAddNLs :: Bool
   }
 
 -- | Serialize a XML 'Root'
 serializeXMLRoot :: SerializeXMLOptions -> Root -> TL.Text
-serializeXMLRoot sopts Root{..} = TLB.toLazyText $ go $
+serializeXMLRoot sopts Root{..} = TLB.toLazyText $
+    (if serializeProEpilogAddNLs sopts then bUnlines else mconcat) $
     maybeToList xmldecl ++
     map bMisc rootPreElem ++
     (case rootDoctype of
@@ -127,10 +133,6 @@ serializeXMLRoot sopts Root{..} = TLB.toLazyText $ go $
                   (maybe id (\b cont -> " standalone=\"" <+> (if b then "yes" else "no") <+> "\"" <+> cont) mstand) $
                   "?>"
 
-    go []           = mempty
-    go [x]          = x
-    go (x:xs@(_:_)) = x <+> TLB.singleton '\n' <+> go xs
-
     bMisc (Left (Comment t)) = "<!--" <+> TLB.fromText (T.replace "--" "-~" t) <+> "-->"
     bMisc (Right (PI tgt dat)) = "<?" <+> bFromShortText tgt <+> (if T.null dat then mempty else " ") <+> TLB.fromText dat <+> "?>"
 
@@ -140,21 +142,19 @@ serializeXMLRoot sopts Root{..} = TLB.toLazyText $ go $
 ppContentS :: SerializeXMLOptions -> Content -> ShowS
 ppContentS c x xs = case x of
     Elem e -> ppElementS c e xs
-    Text t -> ppCDataS t xs
+    Text t -> showCDataS t xs
     CRef r -> showCRefS r xs
     Proc p -> ppProcS p xs
     Comm t -> ppCommS t xs
 
 ppElementS :: SerializeXMLOptions -> Element -> ShowS
 ppElementS c e xs = tagStart (elName e) (elAttribs e) $ case elContent e of
-    [] | allowEmptyTag c name -> "/>" ++ xs
-    [Text t]                  -> ">" ++ ppCDataS t (tagEnd name xs)
-    cs                        -> '>' : foldr (ppContentS c) (tagEnd name xs) cs
+    [] | allowEmpty -> "/>" ++ xs
+    [Text t]        -> ">" ++ showCDataS t (tagEnd name xs)
+    cs              -> '>' : foldr (ppContentS c) (tagEnd name xs) cs
   where
     name = elName e
-
-ppCDataS :: CData -> ShowS
-ppCDataS t xs = showCDataS t xs
+    allowEmpty = serializeAllowEmptyTag c name
 
 ppCommS :: Comment -> ShowS
 ppCommS (Comment t) xs = "<!--" ++ T.unpack (T.replace "--" "-~" t) ++ "-->" ++ xs

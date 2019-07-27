@@ -13,7 +13,7 @@ import           Control.DeepSeq     as X (NFData (rnf), deepseq)
 import           Data.Data           as X (Data)
 import           Data.Foldable       as X (Foldable)
 import           Data.Maybe          as X
-import           Data.Monoid         as X (Monoid (mappend, mempty))
+import           Data.Monoid         as X (Monoid (mappend, mconcat, mempty))
 import           Data.String         as X (IsString (fromString))
 import           Data.Text           as X (Text)
 import           Data.Text.Short     as X (ShortText)

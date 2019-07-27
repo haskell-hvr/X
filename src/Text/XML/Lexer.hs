@@ -390,10 +390,10 @@ decode_attr cs = concatMap cvt (decode_text cs)
       | Just c <- cref_to_char x = [c]
       | otherwise                = "\0" -- triggers error lateron
 
-    norm []          = []
+    norm []         = []
     norm ('\x9':xs) = '\x20' : norm xs
     norm ('\xA':xs) = '\x20' : norm xs
-    norm (x:xs)      = x : norm xs
+    norm (x:xs)     = x : norm xs
 
 data Txt = TxtBit String | CRefBit String deriving Show
 
