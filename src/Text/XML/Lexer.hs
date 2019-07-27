@@ -384,10 +384,16 @@ breakn p l = (map snd as,bs) where (as,bs) = break (p . snd) l
 
 decode_attr :: String -> String
 decode_attr cs = concatMap cvt (decode_text cs)
-  where cvt (TxtBit x) = x
-        cvt (CRefBit x) = case cref_to_char x of
-          Just c  -> [c]
-          Nothing -> "\0" -- '&' : x ++ ";"
+  where
+    cvt (TxtBit x) = norm x
+    cvt (CRefBit x)
+      | Just c <- cref_to_char x = [c]
+      | otherwise                = "\0" -- triggers error lateron
+
+    norm []          = []
+    norm ('\x9':xs) = '\x20' : norm xs
+    norm ('\xA':xs) = '\x20' : norm xs
+    norm (x:xs)      = x : norm xs
 
 data Txt = TxtBit String | CRefBit String deriving Show
 

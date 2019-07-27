@@ -177,28 +177,30 @@ showCDataS cd =
                                            . showString "]]>"
    CDataRaw      -> \ xs -> T.unpack (cdData cd) ++ xs
 
-
+-- escape text in `<![CDATA[  ]]>` blocks
 escCData :: String -> ShowS
 escCData (']' : ']' : '>' : cs) = showString "]]]]><![CDATA[>" . escCData cs
 escCData (c : cs)               = showChar c . escCData cs
 escCData []                     = id
 
+-- escape char in text-nodes
 escChar :: Char -> ShowS
 escChar c = case c of
-  '<'    -> showString "&lt;"
-  '>'    -> showString "&gt;" -- only text-nodes
-  '&'    -> showString "&amp;"
-  '\x0D' -> showString "&#xD;"
+  '<'    -> showString "&lt;"   -- MUST
+  '>'    -> showString "&gt;"   -- MUST ("for compatibility")
+  '&'    -> showString "&amp;"  -- MUST
+  '\x0D' -> showString "&#xD;"  -- MUST (due to EOL normalization)
   _      -> showChar c
 
+-- escape char in attribute value
 escCharAttr :: Char -> ShowS
 escCharAttr c = case c of
-  '<'    -> showString "&lt;"
-  '&'    -> showString "&amp;"
-  '"'    -> showString "&quot;" -- only attr
-  '\x0D' -> showString "&#xD;"
-  '\x0A' -> showString "&#xA;" -- only attr
-  '\x09' -> showString "&#x9;" -- only attr
+  '<'    -> showString "&lt;"   -- MUST
+  '&'    -> showString "&amp;"  -- MUST
+  '"'    -> showString "&quot;" -- MUST (for attr enclosed by ")
+  '\x09' -> showString "&#x9;"  -- MUST (due to attr WS normalization)
+  '\x0A' -> showString "&#xA;"  -- MUST (due to attr WS normalization)
+  '\x0D' -> showString "&#xD;"  -- MUST (due to EOL normalization)
   _      -> showChar c
 
 
