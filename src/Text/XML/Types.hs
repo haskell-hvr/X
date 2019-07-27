@@ -71,6 +71,22 @@ module Text.XML.Types where
 
 import           Common
 
+type Root = Root' Content
+
+-- | Represents the implicit root node of an XML document
+data Root' cnode = Root
+  { rootXmlDeclaration :: Maybe XmlDeclaration -- ^ (optional) XML declaration
+  , rootPreElem        :: MiscNodes            -- ^ Miscellaneous nodes before root element & DOCTYPE declaration
+  , rootDoctype        :: Maybe (Text,MiscNodes) -- ^ optional DOCTYPE declaration and more miscellaneous nodes between DOCTYPE and root element
+  , rootElement        :: Element' cnode       -- ^ The single root document element
+  , rootPostElem       :: MiscNodes            -- ^ Miscellaneous nodes after root element
+  } deriving (Show, Typeable, Data, Generic, Functor, Foldable, Traversable)
+
+instance NFData cnode => NFData (Root' cnode)
+
+-- | Sequence of \"miscellaneous\" nodes
+type MiscNodes = [Either Comment PI]
+
 -- | Denotes the @<?xml version="1.0" encoding="..." standalone="..." ?>@ declaration
 data XmlDeclaration = XmlDeclaration (Maybe ShortText) (Maybe Bool)
   deriving (Show, Typeable, Data, Generic)

@@ -3,6 +3,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE RecordWildCards            #-}
 
 -- |
 -- Module    : Text.XML.Input
@@ -17,6 +18,7 @@ module Text.XML.Input
     ( -- * High-level DOM Parser
       parseXML
     , parseXMLDoc
+    , parseXMLRoot
 
       -- * Token Scanner
     , XmlSource(uncons)
@@ -26,24 +28,81 @@ module Text.XML.Input
     ) where
 
 import           Common
+import           Utils
 
 import           Text.XML.Lexer
-import           Text.XML.Proc
 import           Text.XML.Types
 
 import qualified Data.Text       as T
 import qualified Data.Text.Short as TS
 
--- | parseXMLDoc, parse a XML document to an 'Element'
+-- | Parse a XML document to an 'Element'
+--
+-- If you need access to the prolog and epilog use 'parseXMLRoot'
 --
 -- An optional (single) leading BOM (@U+FEFF@) character will be discard (and not counted in the source positions).
 parseXMLDoc :: XmlSource s => s -> Either (Pos,String) Element
-parseXMLDoc xs0 = parseXML (dropBOM xs0) >>= go
+parseXMLDoc xs0 = rootElement <$> parseXMLRoot xs0
+
+-- | Parse a XML document
+--
+-- An optional (single) leading BOM (@U+FEFF@) character will be discard (and not counted in the source positions).
+parseXMLRoot :: XmlSource s => s -> Either (Pos,String) Root
+parseXMLRoot xs0 = do
+    (rootXmlDeclaration,ts1) <- case ts0 of
+      TokXmlDecl xd : rest -> pure (Just xd, rest)
+      rest                 -> pure (Nothing, rest)
+
+    (rootPreElem,ts2) <- mnodes ts1
+
+    (rootDoctype,ts3) <- case ts2 of
+      TokDTD dtd : ts3a -> do
+        (ns,rest) <- mnodes ts3a
+        pure (Just (dtd,ns), rest)
+      rest -> pure (Nothing, rest)
+
+    (rootElement,ts4) <- case ts3 of
+      TokStart {} : _ -> case parse ts3 of
+        ElemF el : rest -> case traverse fromContentF el of
+                                Right e' -> pure (e',rest)
+                                Left err -> Left err
+        _ -> Left (-1,"empty document (i.e. missing root element)")
+
+      _:_ -> Left (-1,"unexpected (non-misc) content nodes after root element")
+      [] -> Left (-1,"empty document (i.e. missing root element)")
+
+    (rootPostElem,ts5) <- mnodes2 ts4
+
+    case ts5 of
+      [] -> pure Root{..}
+      (_:_) -> Left (-1,"unexpected (non-misc) content nodes after root element")
   where
-    go cs = case onlyElems cs of
-      []    -> Left (-1,"empty document (i.e. missing root element)")
-      [e]   -> Right e
-      _:_:_ -> Left (-1,"too many root elements in document")
+    ts0 = scanXML (dropBOM xs0)
+
+    -- mnodes :: [Token] -> Either _ ([MiscNodes],[Token])
+
+    mnodes = go []
+      where
+        go _   (TokError n e : _)    = Left (n,e)
+        go acc (TokComment x : rest) = go (Left x:acc) rest
+        go acc (TokPI _ x : rest)    = go (Right x:acc) rest
+        go acc (TokText cdata : rest)
+          | isWsCdata cdata          = go acc rest
+        go acc xs                    = pure (reverse acc, xs)
+
+
+    mnodes2 = go []
+      where
+        go _   (Failure n e : _)     = Left (n,e)
+        go acc (CommF x : rest)      = go (Left x:acc) rest
+        go acc (ProcF x : rest)      = go (Right x:acc) rest
+        go acc (TextF cdata : rest)
+          | isWsCdata cdata          = go acc rest
+        go acc xs                    = pure (reverse acc, xs)
+
+
+isWsCdata :: CData -> Bool
+isWsCdata (CData _ t) = T.all isS t
 
 -- | parseXML to a list of 'Content' chunks
 --
@@ -55,7 +114,7 @@ parseXML = traverse fromContentF . parse . scanXML
 dropBOM :: XmlSource s => s -> s
 dropBOM s0 = case uncons s0 of
                Just ('\xFEFF',s1) -> s1
-               Just (_,_)         -> s0
+               Just _             -> s0
                Nothing            -> s0
 
 ------------------------------------------------------------------------
@@ -197,4 +256,3 @@ xmlNamesNS = URI "http://www.w3.org/XML/1998/namespace"
 
 xmlnsNS :: URI
 xmlnsNS = URI "http://www.w3.org/2000/xmlns/"
-
