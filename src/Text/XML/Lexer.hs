@@ -280,7 +280,7 @@ special ((_,'D') : (_,'O') : (_,'C') : (_,'T') : (_,'Y') : (_,'P') : (_,'E') : c
   let (xs,ts) = munch "" 0 cs in TokDTD (T.pack (reverse xs)) : tokens' ts
   where
     munch acc nesting ((_,'>') : ds)
-     | nesting == (0::Int)            = ('>':acc,ds)
+     | nesting == (0::Int)            = (acc,ds)
      | otherwise                      = munch ('>':acc) (nesting-1) ds
     munch acc nesting ((_,'<') : ds)  = munch ('<':acc) (nesting+1) ds
     munch acc n ((_,x) : ds)          = munch (x:acc) n ds

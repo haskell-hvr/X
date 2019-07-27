@@ -28,7 +28,9 @@ Copyright (c) 2019  Herbert Valerio Riedel <hvr@gnu.org>
 
 module Utils where
 
-import           Common ()
+import           Common
+import qualified Data.Text.Lazy.Builder as TLB
+import qualified Data.Text.Short        as TS
 
 -- |
 --
@@ -148,4 +150,10 @@ unsnoc [] = Nothing
 unsnoc xs = Just (init xs, last xs)
 
 
+infixr 6 <+>
 
+(<+>) :: TLB.Builder -> TLB.Builder -> TLB.Builder
+(<+>) = mappend
+
+bFromShortText :: ShortText -> TLB.Builder
+bFromShortText = TLB.fromText . TS.toText

@@ -244,6 +244,7 @@ checkNS = \case
     (Attr (QName { qPrefix = Just "xmlns", qLName = "xmlns"}) _  ) -> False
     (Attr (QName { qPrefix = Just "xmlns", qLName = "xml"})   uri) -> uri == xmlNamesNS'
     (Attr (QName { qPrefix = Just "xmlns", qLName = _})       uri) -> isNotRsvd uri
+    (Attr (QName { qPrefix = Nothing     , qLName = "xmlns"}) "")  -> True
     (Attr (QName { qPrefix = Nothing     , qLName = "xmlns"}) uri) -> isNotRsvd uri
     _                                                              -> True
   where

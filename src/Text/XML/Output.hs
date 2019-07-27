@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RecordWildCards   #-}
 
 {-
 
@@ -66,13 +67,18 @@ permission notice:
 module Text.XML.Output
   ( serializeXML
   , serializeXMLDoc
+  , serializeXMLRoot
+  , SerializeXMLOptions(..), defaultSerializeXMLOptions
   ) where
 
 import           Common
-import qualified Data.Text       as T
-import qualified Data.Text.Lazy  as TL
-import qualified Data.Text.Short as TS
+import qualified Data.Text              as T
+import qualified Data.Text.Lazy         as TL
+import qualified Data.Text.Lazy.Builder as TLB
+import qualified Data.Text.Short        as TS
 import           Text.XML.Types
+import           Utils
+
 
 -- | Serialize XML 1.0 document prefixed by the XML prologue
 -- \"@\<?xml version='1.0' ?\>@\"
@@ -82,49 +88,87 @@ serializeXMLDoc = TL.pack . showTopElement
 
 -- | Serialize a sequence of XML 'Content' nodes
 serializeXML :: [Content] -> TL.Text
-serializeXML = TL.pack . foldr (ppContentS defaultConfigPP "") ""
+serializeXML = TL.pack . foldr (ppContentS defaultSerializeXMLOptions "") ""
+
+
+-- | Default rendering options
+--
+--  * Allow empty tags for all non-special elements
+defaultSerializeXMLOptions :: SerializeXMLOptions
+defaultSerializeXMLOptions = SerializeXMLOptions
+  { allowEmptyTag = const True
+  }
+
+-- | Options
+data SerializeXMLOptions = SerializeXMLOptions
+  { allowEmptyTag :: QName -> Bool
+  }
+
+-- | Serialize a XML 'Root'
+serializeXMLRoot :: SerializeXMLOptions -> Root -> TL.Text
+serializeXMLRoot sopts Root{..} = TLB.toLazyText $ go $
+    maybeToList xmldecl ++
+    map bMisc rootPreElem ++
+    (case rootDoctype of
+       Nothing -> []
+       Just (dtd,moreMisc) -> ("<!DOCTYPE" <+> TLB.fromText dtd <+> ">") : map bMisc moreMisc
+    ) ++
+    [TLB.fromString (ppElementS sopts "" rootElement "")] ++
+    map bMisc rootPostElem
+  where
+    xmldecl = case rootXmlDeclaration of
+                Nothing -> Nothing
+                Just (XmlDeclaration Nothing Nothing) -> Just "<?xml version=\"1.0\"?>"
+                Just (XmlDeclaration menc mstand) -> Just $
+                  ("<?xml version=\"1.0\"" <+>) $
+                  (maybe id (\enc cont -> " encoding=\"" <+> bFromShortText enc <+> "\"" <+> cont) menc) $
+                  (maybe id (\b cont -> " standalone=\"" <+> (if b then "yes" else "no") <+> "\"" <+> cont) mstand) $
+                  "?>"
+
+    go []           = mempty
+    go [x]          = x
+    go (x:xs@(_:_)) = x <+> TLB.singleton '\n' <+> go xs
+
+    bMisc (Left (Comment t)) = "<!--" <+> TLB.fromText t <+> "-->"
+    bMisc (Right (PI tgt dat)) = "<?" <+> bFromShortText tgt <+> (if T.null dat then mempty else " ") <+> TLB.fromText dat <+> "?>"
+
+
+-- ppElementS defaultSerializeXMLOptions "" c ""
 
 -- | The XML 1.0 header
 xml_header :: String
 xml_header = "<?xml version='1.0' ?>"
 
 --------------------------------------------------------------------------------
-data ConfigPP = ConfigPP
-  { prettify      :: !Bool
-  , allowEmptyTag :: QName -> Bool
-  }
-
--- | Default pretty printing configuration.
---  * Always use abbreviate empty tags.
-defaultConfigPP :: ConfigPP
-defaultConfigPP = ConfigPP { prettify = False, allowEmptyTag = const True }
+prettify :: SerializeXMLOptions -> Bool
+prettify _ = False
 
 {-
 -- | A configuration that tries to make things pretty
 -- (possibly at the cost of changing the semantics a bit
 -- through adding white space.)
-prettyConfigPP     :: ConfigPP
-prettyConfigPP      = defaultConfigPP { prettify = True }
+prettySerializeXMLOptions     :: SerializeXMLOptions
+prettySerializeXMLOptions      = defaultSerializeXMLOptions { prettify = True }
 
 -- | Pretty printing renders XML documents faithfully,
 -- with the exception that whitespace may be added\/removed
 -- in non-verbatim character data.
 ppTopElement       :: Element -> String
-ppTopElement        = ppcTopElement prettyConfigPP
+ppTopElement        = ppcTopElement prettySerializeXMLOptions
 
 -- | Pretty printing renders XML documents faithfully,
 -- with the exception that whitespace may be added\/removed
 -- in non-verbatim character data.
-ppcTopElement      :: ConfigPP -> Element -> String
+ppcTopElement      :: SerializeXMLOptions -> Element -> String
 ppcTopElement c e   = unlines [xml_header,ppcElement c e]
 
 -- | Pretty printing elements
-ppcElement         :: ConfigPP -> Element -> String
+ppcElement         :: SerializeXMLOptions -> Element -> String
 ppcElement c e      = ppElementS c "" e ""
 -}
 
 -- | Pretty printing content using ShowS
-ppContentS         :: ConfigPP -> String -> Content -> ShowS
+ppContentS         :: SerializeXMLOptions -> String -> Content -> ShowS
 ppContentS c i x xs = case x of
   Elem e -> ppElementS c i e xs
   Text t -> ppCDataS c i t xs
@@ -132,7 +176,7 @@ ppContentS c i x xs = case x of
   Proc p -> ppProcS p xs
   Comm t -> ppCommS t xs
 
-ppElementS         :: ConfigPP -> String -> Element -> ShowS
+ppElementS         :: SerializeXMLOptions -> String -> Element -> ShowS
 ppElementS c i e xs = i ++ (tagStart (elName e) (elAttribs e) $
   case elContent e of
     [] | allowEmptyTag c name -> " />" ++ xs
@@ -144,7 +188,7 @@ ppElementS c i e xs = i ++ (tagStart (elName e) (elAttribs e) $
   where
     name = elName e
 
-ppCDataS           :: ConfigPP -> String -> CData -> ShowS
+ppCDataS           :: SerializeXMLOptions -> String -> CData -> ShowS
 ppCDataS c i t xs   = i ++ if cdVerbatim t /= CDataText || not (prettify c)
                              then showCDataS t xs
                              else foldr cons xs (showCData t)
@@ -157,7 +201,7 @@ ppCommS :: Comment -> ShowS
 ppCommS (Comment t) xs = "<!--" ++ T.unpack t ++ "-->" ++ xs
 
 ppProcS :: PI -> ShowS
-ppProcS (PI tgt dat) xs = "<?" ++ TS.unpack tgt ++ " " ++ T.unpack dat ++ "?>" ++ xs
+ppProcS (PI tgt dat) xs = "<?" ++ TS.unpack tgt ++ (if T.null dat then mempty else " ") ++ T.unpack dat ++ "?>" ++ xs
 
 --------------------------------------------------------------------------------
 
@@ -166,10 +210,10 @@ showTopElement     :: Element -> String
 showTopElement c    = xml_header ++ showElement c
 
 showElement        :: Element -> String
-showElement c       = ppElementS defaultConfigPP "" c ""
+showElement c       = ppElementS defaultSerializeXMLOptions "" c ""
 
 showCData          :: CData -> String
-showCData c         = ppCDataS defaultConfigPP "" c ""
+showCData c         = ppCDataS defaultSerializeXMLOptions "" c ""
 
 -- Note: crefs should not contain '&', ';', etc.
 showCRefS          :: ShortText -> ShowS

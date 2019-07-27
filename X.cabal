@@ -1,6 +1,6 @@
 cabal-version:   2.2
 name:            X
-version:         0.1.0.0
+version:         0.2.0.0
 
 license:         BSD-3-Clause AND GPL-3.0-or-later
 license-files:   LICENSE LICENSE.GPLv3
@@ -16,6 +16,13 @@ description:
   Light-weight XML library derived from the [`xml` package](http://hackage.haskell.org/package/xml)
   for simple parsing and creation of XML documents.
   It only depends on @base@, @deepseq@, @bytestring@, @text@, and @text-short@.
+  .
+  This library provides support for the following specifications:
+  .
+  * <http://www.w3.org/TR/xml/ Extensible Markup Language (XML) 1.0 (5ed)>
+  .
+  * <http://www.w3.org/TR/xml-names/ Namespaces in XML 1.0 (3ed)>
+  .
 
 library
   hs-source-dirs: src
