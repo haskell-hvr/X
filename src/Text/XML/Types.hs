@@ -93,13 +93,17 @@ data XmlDeclaration = XmlDeclaration (Maybe ShortText) (Maybe Bool)
 
 instance NFData XmlDeclaration
 
+-- | Processing instruction
 data PI = PI
-  { piTarget :: !ShortText
-  , piData   :: !Text
+  { piTarget :: !ShortText -- ^ Invariant: MUST not be @[Xx][Mm][Ll]@
+  , piData   :: !Text      -- ^ Invariant: MUST not contain @?>@
   } deriving (Show, Typeable, Data, Generic)
 
 instance NFData PI
 
+-- | Represents a XML comment
+--
+-- Invariant: SHOULD not contain @--@ (occurences of @--@ will be automatically substituted by @-~@ on serialization)
 newtype Comment = Comment Text
   deriving (Show, Typeable, Data, Generic, NFData)
 
@@ -149,11 +153,14 @@ data CDataKind
 
 instance NFData CDataKind
 
+-- | A <https://www.w3.org/TR/xml-names/#NT-NCName NCName>
+type NCName = ShortText
+
 -- | XML qualified names
 data QName    = QName
   { qLName  :: !LName
   , qURI    :: Maybe URI
-  , qPrefix :: Maybe ShortText
+  , qPrefix :: Maybe NCName -- ^ Invariant: MUST be a proper @NCName@
   } deriving (Show, Typeable, Data, Generic)
 
 instance NFData QName
@@ -170,7 +177,9 @@ instance Ord QName where
       x   -> x
 
 -- | XML local names
-newtype LName = LName { unLName :: ShortText }
+--
+-- Invariant: MUST be a proper @NCName@
+newtype LName = LName { unLName :: NCName }
   deriving (Ord, Eq, Typeable, Data, IsString, NFData, Generic)
 
 -- due to the IsString instance we can just drop the constructor name
@@ -178,6 +187,8 @@ instance Show LName where
   showsPrec p (LName s) = showsPrec p s
 
 -- | URIs resembling @anyURI@
+--
+-- Invariant: MUST not be @""@
 newtype URI = URI { unURI :: ShortText }
   deriving (Ord, Eq, Typeable, Data, IsString, NFData, Generic)
 
