@@ -70,10 +70,14 @@ permission notice:
 module Text.XML.Types where
 
 import           Common
+import qualified Data.Text.Short as TS
+import           Utils
 
 type Root = Root' Content
 
 -- | Represents the implicit root node of an XML document
+--
+-- @since 0.2.0
 data Root' cnode = Root
   { rootXmlDeclaration :: Maybe XmlDeclaration -- ^ (optional) XML declaration
   , rootPreElem        :: MiscNodes            -- ^ Miscellaneous nodes before root element & DOCTYPE declaration
@@ -85,25 +89,39 @@ data Root' cnode = Root
 instance NFData cnode => NFData (Root' cnode)
 
 -- | Sequence of \"miscellaneous\" nodes
+--
+-- @since 0.2.0
 type MiscNodes = [Either Comment PI]
 
 -- | Denotes the @<?xml version="1.0" encoding="..." standalone="..." ?>@ declaration
+--
+-- @since 0.2.0
 data XmlDeclaration = XmlDeclaration (Maybe ShortText) (Maybe Bool)
   deriving (Show, Typeable, Data, Generic)
 
 instance NFData XmlDeclaration
 
+-- | Processing instruction
+--
+-- @since 0.2.0
 data PI = PI
-  { piTarget :: !ShortText
-  , piData   :: !Text
+  { piTarget :: !ShortText -- ^ Invariant: MUST not be @[Xx][Mm][Ll]@
+  , piData   :: !Text      -- ^ Invariant: MUST not contain @?>@
   } deriving (Show, Typeable, Data, Generic)
 
 instance NFData PI
 
+-- | Represents a XML comment
+--
+-- Invariant: SHOULD not contain @--@ (occurences of @--@ will be automatically substituted by @-~@ on serialization)
+--
+-- @since 0.2.0
 newtype Comment = Comment Text
   deriving (Show, Typeable, Data, Generic, NFData)
 
 -- | XML content
+--
+-- @since 0.2.0
 data Content
   = Elem Element
   | Text CData
@@ -149,11 +167,18 @@ data CDataKind
 
 instance NFData CDataKind
 
--- | XML qualified names
+-- | A <https://www.w3.org/TR/xml-names/#NT-NCName NCName>
+--
+-- NB: Among other properties this means that an 'NCName' shall never be the empty string.
+--
+-- @since 0.2.0
+type NCName = ShortText
+
+-- | XML (expanded) qualified names
 data QName    = QName
   { qLName  :: !LName
   , qURI    :: Maybe URI
-  , qPrefix :: Maybe ShortText
+  , qPrefix :: Maybe NCName -- ^ Invariant: MUST be a proper <https://www.w3.org/TR/xml-names/#NT-NCName NCName>
   } deriving (Show, Typeable, Data, Generic)
 
 instance NFData QName
@@ -170,7 +195,9 @@ instance Ord QName where
       x   -> x
 
 -- | XML local names
-newtype LName = LName { unLName :: ShortText }
+--
+-- Invariant: MUST be a proper <https://www.w3.org/TR/xml-names/#NT-NCName NCName>
+newtype LName = LName { unLName :: NCName }
   deriving (Ord, Eq, Typeable, Data, IsString, NFData, Generic)
 
 -- due to the IsString instance we can just drop the constructor name
@@ -178,6 +205,8 @@ instance Show LName where
   showsPrec p (LName s) = showsPrec p s
 
 -- | URIs resembling @anyURI@
+--
+-- Invariant: MUST not be @""@
 newtype URI = URI { unURI :: ShortText }
   deriving (Ord, Eq, Typeable, Data, IsString, NFData, Generic)
 
@@ -215,3 +244,26 @@ blank_element = Element
   , elAttribs = mempty
   , elContent = mempty
   }
+
+-- | Smart constructor for @xmlns:\<prefix\> = \<namespace-uri\>@
+--
+-- @since 0.2.0
+xmlns_attr :: NCName -- ^ non-empty namespace prefix
+           -> URI -- ^ Namespace URI
+           -> Attr
+xmlns_attr pfx (URI uri)
+  | TS.null pfx = error "Text.XML.xmlns_attr: empty namespace prefix"
+  | otherwise = Attr (QName { qPrefix = Just (TS.pack "xmlns"), qLName = LName pfx, qURI = Just xmlnsNS }) (TS.toText uri)
+  where
+    xmlnsNS = URI ns_xmlns_uri
+
+-- | Smart constructor for @xmlns = [\<namespace-uri\>|""]@
+--
+-- @since 0.2.0
+xmlns_def_attr :: Maybe URI -- ^ Default namespace URI (or 'Nothing' to reset default namespace)
+                -> Attr
+xmlns_def_attr muri
+  = Attr (QName { qPrefix = Nothing, qLName = LName (TS.pack "xmlns"), qURI = Just xmlnsNS })
+         (case muri of { Nothing -> mempty; Just (URI uri) -> TS.toText uri})
+  where
+    xmlnsNS = URI ns_xmlns_uri

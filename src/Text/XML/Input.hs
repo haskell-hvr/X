@@ -225,6 +225,8 @@ annotName (namespaces,def_ns) n = n { qURI = maybe def_ns (`lookup` namespaces) 
 annotAttr :: NSInfo -> Attr -> Attr
 annotAttr ns a@(Attr { attrKey = k}) =
   case (qPrefix k, qLName k) of
+    -- see https://www.w3.org/2000/xmlns/
+    (Nothing, "xmlns") -> a { attrKey = k { qURI = Just xmlnsNS } }
     -- Do not apply the default name-space to unqualified
     -- attributes.  See Section 6.2 of <http://www.w3.org/TR/REC-xml-names>.
     (Nothing, _) -> a
@@ -243,17 +245,17 @@ checkNS :: Attr -> Bool
 checkNS = \case
     (Attr (QName { qPrefix = Just "xmlns", qLName = "xmlns"}) _  ) -> False
     (Attr (QName { qPrefix = Just "xmlns", qLName = "xml"})   uri) -> uri == xmlNamesNS'
-    (Attr (QName { qPrefix = Just "xmlns", qLName = _})       uri) -> isNotRsvd uri
+    (Attr (QName { qPrefix = Just "xmlns", qLName = _})       uri) -> not (T.null uri) && isNotRsvd uri
     (Attr (QName { qPrefix = Nothing     , qLName = "xmlns"}) "")  -> True
     (Attr (QName { qPrefix = Nothing     , qLName = "xmlns"}) uri) -> isNotRsvd uri
     _                                                              -> True
   where
     xmlNamesNS' = TS.toText (unURI xmlNamesNS)
     xmlnsNS'    = TS.toText (unURI xmlnsNS)
-    isNotRsvd uri = not (uri == xmlNamesNS' || uri == xmlnsNS' || uri == "")
+    isNotRsvd uri = not (uri == xmlNamesNS' || uri == xmlnsNS')
 
 xmlNamesNS :: URI
-xmlNamesNS = URI "http://www.w3.org/XML/1998/namespace"
+xmlNamesNS = URI ns_xml_uri
 
 xmlnsNS :: URI
-xmlnsNS = URI "http://www.w3.org/2000/xmlns/"
+xmlnsNS = URI ns_xmlns_uri
