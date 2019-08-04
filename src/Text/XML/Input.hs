@@ -66,9 +66,10 @@ parseXMLRoot xs0 = do
         ElemF el : rest -> case traverse fromContentF el of
                                 Right e' -> pure (e',rest)
                                 Left err -> Left err
-        _ -> Left (-1,"empty document (i.e. missing root element)")
+        Failure pos msg : _ -> Left (pos,msg)
+        _                   -> Left (-1,"empty document (i.e. missing root element)")
 
-      _:_ -> Left (-1,"unexpected (non-misc) content nodes after root element")
+      _:_ -> Left (-1,"unexpected (non-misc) content nodes before root element")
       [] -> Left (-1,"empty document (i.e. missing root element)")
 
     (rootPostElem,ts5) <- mnodes2 ts4
@@ -149,10 +150,10 @@ parse ts = let (es,_,ts1) = nodes nsinfo0 [] ts
 -- Information about namespaces.
 -- The first component is a map that associates prefixes to URIs,
 -- the second is the URI for the default namespace, if one was provided.
-type NSInfo = ([(ShortText,URI)],Maybe URI)
+type NSInfo = ([(ShortText,URI)],URI)
 
 nsinfo0 :: NSInfo
-nsinfo0 = ([("xml",xmlNamesNS),("xmlns",xmlnsNS)],Nothing)
+nsinfo0 = ([("xml",xmlNamesNS),("xmlns",xmlnsNS)],nullNs)
 
 nodes :: NSInfo -> [QName] -> [Token] -> ([ContentF], [QName], [Token])
 nodes ns ps (TokError pos msg : _) =
@@ -209,33 +210,37 @@ nodes cur_info ps (TokStart pos t as empty' : ts) = (node : siblings, open, toks
 
 nodes ns ps (TokEnd pos t : ts)
   = case ps of
-      p1:_ | t1 == p1 -> ([],[],ts)
+      p1:_ | qLName t  == qLName p1
+           , qPrefix t == qPrefix p1
+           -> ([],[],ts)
       _ -> let (es,qs,ts1) = nodes ns ps ts
            in (Failure pos "start/end-tag mismatch" : es, qs, ts1)
-  where
-    t1 = annotName ns t
 
-nodes _ ps []                 = ([],ps,[])
-
+nodes _ ps []
+  = case ps of
+      []  -> ([],[],[]) -- done
+      _:_ -> ([Failure (-1) "premature eof before end-tag"], ps, [])
 
 annotName :: NSInfo -> QName -> QName
-annotName (namespaces,def_ns) n = n { qURI = maybe def_ns (`lookup` namespaces) (qPrefix n) }
-
+annotName (namespaces,def_ns) n = n { qURI = lookupNs (qPrefix n) }
+  where
+    lookupNs Nothing    = def_ns
+    lookupNs (Just pfx) = fromMaybe (error "annotName: the impossible") (lookup pfx namespaces)
 
 annotAttr :: NSInfo -> Attr -> Attr
 annotAttr ns a@(Attr { attrKey = k}) =
   case (qPrefix k, qLName k) of
     -- see https://www.w3.org/2000/xmlns/
-    (Nothing, "xmlns") -> a { attrKey = k { qURI = Just xmlnsNS } }
+    (Nothing, "xmlns") -> a { attrKey = k { qURI = xmlnsNS } }
     -- Do not apply the default name-space to unqualified
     -- attributes.  See Section 6.2 of <http://www.w3.org/TR/REC-xml-names>.
-    (Nothing, _) -> a
-    _            -> a { attrKey = annotName ns k }
+    (Nothing, _)       -> a
+    _                  -> a { attrKey = annotName ns k }
 
 addNS :: Attr -> NSInfo -> NSInfo
 addNS (Attr { attrKey = key, attrVal = val }) (ns,def) =
   case (qPrefix key, qLName key) of
-    (Nothing,"xmlns") -> (ns, if T.null val then Nothing else Just (URI (TS.fromText val)))
+    (Nothing,"xmlns") -> (ns, if T.null val then nullNs else (URI (TS.fromText val)))
     (Just "xmlns", "xml") -> (ns,def)
     (Just "xmlns", k) -> ((unLName k, URI (TS.fromText val)) : ns, def)
     _                 -> (ns,def)

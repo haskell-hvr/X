@@ -77,6 +77,9 @@ import qualified Data.Text.Lazy  as TL
 import qualified Data.Text.Short as TS
 import           Numeric         (readHex)
 
+nullNs :: URI
+nullNs = URI mempty
+
 class XmlSource s where
   uncons :: s -> Maybe (Char,s)
 
@@ -290,7 +293,7 @@ special ((n,_):_) = [TokError (n-1) "invalid element name"]
 special [] = eofErr
 
 qualName :: LString -> (QName,LString)
-qualName xs = (QName { qURI    = Nothing
+qualName xs = (QName { qURI    = nullNs
                      , qPrefix = fmap fromString q
                      , qLName  = LName (fromString n)
                      }, bs)

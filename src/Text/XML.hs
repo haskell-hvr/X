@@ -74,12 +74,26 @@ permission notice:
 --
 
 module Text.XML (
+    -- * Smart Element node constructor
 
-    module Text.XML,
+    Node(..),
+
+    -- ** Unqualified names
+    unqual,
+    unode,
+
+    -- * Attribute helpers
+    add_attr,
+    add_attrs,
+
+    -- * 'Content' conversion/casts
+    IsContent(toContent, fromContent),
+
+    -- * Reexports
     module Text.XML.Types,
     module Text.XML.Proc,
     module Text.XML.Input,
-    module Text.XML.Output
+    module Text.XML.Output,
 
   ) where
 
@@ -90,7 +104,9 @@ import           Text.XML.Output
 import           Text.XML.Proc
 import           Text.XML.Types
 
-import qualified Data.Text.Short as TS
+import           Text.XML.Types.Internal (IsContent (..))
+
+import qualified Data.Text.Short         as TS
 
 -- | Add an attribute to an element.
 add_attr :: Attr -> Element -> Element

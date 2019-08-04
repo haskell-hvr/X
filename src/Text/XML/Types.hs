@@ -93,7 +93,7 @@ instance NFData cnode => NFData (Root' cnode)
 -- @since 0.2.0
 type MiscNodes = [Either Comment PI]
 
--- | Denotes the @<?xml version="1.0" encoding="..." standalone="..." ?>@ declaration
+-- | Denotes the @\<?xml version="1.0" encoding="..." standalone="..." ?\>@ declaration
 --
 -- @since 0.2.0
 data XmlDeclaration = XmlDeclaration (Maybe ShortText) (Maybe Bool)
@@ -175,24 +175,37 @@ instance NFData CDataKind
 type NCName = ShortText
 
 -- | XML (expanded) qualified names
+--
 data QName    = QName
-  { qLName  :: !LName
-  , qURI    :: Maybe URI
+  { qLName  :: !LName -- ^ Local name part
+  , qURI    :: !URI -- ^ Invariant: the `qURI' field MUST always be populated with the proper namespace. Specifically, entities belonging to the <http://www.w3.org/2000/xmlns/> or <http://www.w3.org/XML/1998/namespace> must have the 'qURI' field accordingly
   , qPrefix :: Maybe NCName -- ^ Invariant: MUST be a proper <https://www.w3.org/TR/xml-names/#NT-NCName NCName>
   } deriving (Show, Typeable, Data, Generic)
 
 instance NFData QName
 
+-- | Compares namespace URI and local name for equality (i.e. the namespace prefix is ignored)
+--
+-- @since 0.3.0
 instance Eq QName where
-  q1 == q2  = compare q1 q2 == EQ
+  q1 == q2  = xn q1 == xn q2
+    where
+      xn (QName ln ns _) = (ns,ln)
 
+-- | Compares namespace URI and local name for equality (i.e. the namespace prefix is effectively ignored)
+--
+-- The <http://www.w3.org/2000/xmlns/> namespace is considered less than any other namespace (including the null namespace)
+--
+-- @since 0.3.0
 instance Ord QName where
-  compare q1 q2 =
-    case compare (qLName q1) (qLName q2) of
-      EQ  -> case (qURI q1, qURI q2) of
-               (Nothing,Nothing) -> compare (qPrefix q1) (qPrefix q2)
-               (u1,u2)           -> compare u1 u2
-      x   -> x
+  compare = comparing sortKey
+    where
+      sortKey (QName ln ns pfx) = (not isXmlns,ns,key2)
+        where
+          isXmlns = URI ns_xmlns_uri == ns
+          key2
+            | isXmlns = if isNothing pfx then LName mempty else ln
+            | otherwise = ln
 
 -- | XML local names
 --
@@ -206,9 +219,25 @@ instance Show LName where
 
 -- | URIs resembling @anyURI@
 --
--- Invariant: MUST not be @""@
+-- Invariant: MUST be a valid @URI-reference@ as defined in <https://tools.ietf.org/html/rfc3986 RFC3986>
+--
 newtype URI = URI { unURI :: ShortText }
   deriving (Ord, Eq, Typeable, Data, IsString, NFData, Generic)
+
+-- | Test for /empty/ 'URI'
+--
+-- >>> isNullURI (URI mempty)
+-- True
+--
+-- >>> isNullURI (URI "")
+-- True
+--
+-- >>> isNullURI (URI " ")
+-- False
+--
+-- @since 0.3.0
+isNullURI :: URI -> Bool
+isNullURI (URI u) = TS.null u
 
 -- due to the IsString instance we can just drop the constructor name
 instance Show URI where
@@ -219,14 +248,13 @@ instance Show URI where
 -- A negative value denotes EOF
 type Pos = Int
 
-
 -- blank elements --------------------------------------------------------------
 
 -- | Blank names
 blank_name :: QName
 blank_name = QName
   { qLName  = LName mempty
-  , qURI    = Nothing
+  , qURI    = URI mempty
   , qPrefix = Nothing
   }
 
@@ -247,23 +275,43 @@ blank_element = Element
 
 -- | Smart constructor for @xmlns:\<prefix\> = \<namespace-uri\>@
 --
--- @since 0.2.0
-xmlns_attr :: NCName -- ^ non-empty namespace prefix
+-- Invariant: @\<namespace-uri\>@ MUST be non-empty for non-empty prefixes
+--
+-- @since 0.3.0
+xmlns_attr :: ShortText -- ^ namespace prefix (if empty, denotes the default namespace; see also 'xmlns_def_attr')
            -> URI -- ^ Namespace URI
            -> Attr
-xmlns_attr pfx (URI uri)
-  | TS.null pfx = error "Text.XML.xmlns_attr: empty namespace prefix"
-  | otherwise = Attr (QName { qPrefix = Just (TS.pack "xmlns"), qLName = LName pfx, qURI = Just xmlnsNS }) (TS.toText uri)
+xmlns_attr pfx uri
+  | TS.null pfx = xmlns_def_attr uri
+  | not (isNCName (TS.unpack pfx)) = error "Text.XML.xmlns_attr: non-empty prefix is not a proper NCName"
+  | isNullURI uri = error "Text.XML.xmlns_attr: empty namespace URI for non-empty prefix"
+  | otherwise = Attr (QName { qPrefix = Just (TS.pack "xmlns"), qLName = LName pfx, qURI = xmlnsNS }) (TS.toText (unURI uri))
   where
     xmlnsNS = URI ns_xmlns_uri
 
--- | Smart constructor for @xmlns = [\<namespace-uri\>|""]@
+-- | Smart constructor for @xmlns = [\<namespace-uri\>|""]@ (i.e. for declaring the default namespace)
 --
--- @since 0.2.0
-xmlns_def_attr :: Maybe URI -- ^ Default namespace URI (or 'Nothing' to reset default namespace)
-                -> Attr
-xmlns_def_attr muri
-  = Attr (QName { qPrefix = Nothing, qLName = LName (TS.pack "xmlns"), qURI = Just xmlnsNS })
-         (case muri of { Nothing -> mempty; Just (URI uri) -> TS.toText uri})
+-- prop> xmlns_attr "" ns == xmlns_def_attr ns
+--
+-- @since 0.3.0
+xmlns_def_attr :: URI -- ^ Default namespace URI (use /empty/ 'URI' to reset default namespace)
+               -> Attr
+xmlns_def_attr uri
+  = Attr (QName { qPrefix = Nothing, qLName = LName (TS.pack "xmlns"), qURI = xmlnsNS })
+         (if isNullURI uri then mempty else TS.toText (unURI uri))
   where
     xmlnsNS = URI ns_xmlns_uri
+
+-- | Convert @xmlns@ 'Attr' into a @(prefix,namespace-uri)@ pair; returns 'Nothing' if the argument isn't a @xmlns@ attribute.
+--
+-- An empty prefix denotes the default-namespace
+--
+-- prop> xmlns_from_attr (xmlns_attr pfx ns) == Just (pfx,ns)
+--
+-- @since 0.3.0
+xmlns_from_attr :: Attr -> Maybe (ShortText,URI)
+xmlns_from_attr (Attr (QName ln ns pfx) ns')
+  | ns /= URI ns_xmlns_uri = Nothing
+  | otherwise = Just $ case pfx of
+                  Nothing -> (mempty,     URI (TS.fromText ns'))
+                  Just _  -> (unLName ln, URI (TS.fromText ns'))
