@@ -99,16 +99,20 @@ serializeXML = TL.pack . foldr (ppContentS defaultSerializeXMLOptions) ""
 --
 --  * Don't insert newlines between prolog/epilog nodes
 --
+--  * Do not sort attributes
+--
 defaultSerializeXMLOptions :: SerializeXMLOptions
 defaultSerializeXMLOptions = SerializeXMLOptions
   { serializeAllowEmptyTag     = const True
   , serializeProEpilogAddNLs   = False
+  , serializeSortAttributes    = False
   }
 
 -- | Options for tweaking XML serialization output
 data SerializeXMLOptions = SerializeXMLOptions
   { serializeAllowEmptyTag   :: QName -> Bool
   , serializeProEpilogAddNLs :: Bool
+  , serializeSortAttributes  :: Bool
   }
 
 -- | Serialize a XML 'Root'
@@ -148,7 +152,7 @@ ppContentS c x xs = case x of
     Comm t -> ppCommS t xs
 
 ppElementS :: SerializeXMLOptions -> Element -> ShowS
-ppElementS c e xs = tagStart (elName e) (elAttribs e) $ case elContent e of
+ppElementS c e xs = tagStart (serializeSortAttributes c) (elName e) (elAttribs e) $ case elContent e of
     [] | allowEmpty -> "/>" ++ xs
     [Text t]        -> ">" ++ showCDataS t (tagEnd name xs)
     cs              -> '>' : foldr (ppContentS c) (tagEnd name xs) cs
@@ -213,9 +217,12 @@ escStrAttr cs rs    = foldr escCharAttr rs cs
 tagEnd             :: QName -> ShowS
 tagEnd qn rs        = '<':'/':showQName qn ++ '>':rs
 
-tagStart           :: QName -> [Attr] -> ShowS
-tagStart qn as rs   = '<':showQName qn ++ as_str ++ rs
- where as_str       = if null as then "" else ' ' : unwords (map showAttr as)
+tagStart :: Bool -> QName -> [Attr] -> ShowS
+tagStart sortAttr qn as rs = '<':showQName qn ++ as_str ++ rs
+  where
+    as_str = if null as then "" else ' ' : unwords (map showAttr as')
+    as' | sortAttr  = sort as
+        | otherwise = as
 
 showAttr           :: Attr -> String
 showAttr (Attr qn v) = showQName qn ++ '=' : '"' : escStrAttr (T.unpack v) "\""
