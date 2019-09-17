@@ -187,7 +187,7 @@ nodes ns ps (TokText txt : ts) =
 
 nodes cur_info ps (TokStart pos t as empty' : ts) = (node : siblings, open, toks)
   where
-    new_name  = annotName new_info t
+    new_name  = if nsfail then t else annotName new_info t
     prefixes  = filter (/= "xmlns") $ mapMaybe qPrefix (t : [ k | Attr k _ <- as ])
     nsfail    = any (==Nothing) [ lookup pfx (fst new_info) | pfx <- prefixes ]
     rsvnsfail = not (all checkNS as)
