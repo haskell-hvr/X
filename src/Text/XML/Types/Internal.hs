@@ -29,7 +29,10 @@ Copyright (c) 2019  Herbert Valerio Riedel <hvr@gnu.org>
 module Text.XML.Types.Internal where
 
 import           Common
-import           Text.XML.Types
+import qualified Data.Text           as T
+import qualified Data.Text.Short     as TS
+import           Text.XML.Types.Core
+import           Utils
 
 -- | Convenience class for converting to/from 'Content' values
 --
@@ -92,3 +95,52 @@ instance (IsContent l, IsContent r) => IsContent (Either l r) where
   toContent = either toContent toContent
   fromContent c = (Left <$> fromContent c) <|> (Right <$> fromContent c)
   toElem = either toElem toElem
+
+-- | Convert a 'QName' to its text-representation, i.e.
+--
+-- > QName          ::= PrefixedName | UnprefixedName
+-- > PrefixedName   ::= Prefix ':' LocalPart
+-- > UnprefixedName ::= LocalPart
+-- > Prefix         ::= NCName
+-- > LocalPart      ::= NCName
+--
+-- See also 'NCName'
+--
+-- >>> qnameToText (QName "foo" "urn:example.org:bar" (Just "doo"))
+-- "doo:foo"
+--
+-- >>> qnameToText (QName "foo" "urn:example.org:bar" Nothing)
+-- "foo"
+--
+-- See also 'qnameFromText'
+--
+-- @since 0.3.1
+qnameToText :: QName -> Text
+qnameToText (QName (LName ln) _uri Nothing)    = TS.toText ln
+qnameToText (QName (LName ln) _uri (Just pfx)) = TS.toText (mconcat [pfx, TS.singleton ':', ln])
+
+-- | Decode a 'QName' from its text-representation (see 'qnameToText')
+--
+-- This is the inverse to the 'qnameToText' function. However, 'qnameToText' is a lossy conversion, therefore this function needs to reconstruct the 'qURI' value via additional arguments:
+--
+-- The first argument denotes the default namespace 'URI' to associate for unprefixed names; an empty 'URI' is allowed for this argument.
+--
+-- The second argument is a lookup function for mapping a prefix (in the case of a prefixed name) to its respective namespace 'URI'; if this function returns the empty (see 'isNullURI') 'qnameToText' will fail with 'Nothing'.
+--
+-- Finally, this function returns 'Nothing' in case of syntax errors or the prefix lookup function returning an empty 'URI'.
+--
+-- @since 0.3.1
+qnameFromText :: URI -> (NCName -> URI) -> Text -> Maybe QName
+qnameFromText ns0 nslup txt
+  = case T.split (==':') txt of
+      [ln] | isName ln -> Just (QName (LName (TS.fromText ln)) ns0 Nothing)
+      [ln,pfx] | isName ln, isName pfx -> do
+                   let pfx' = TS.fromText pfx
+                       uri  = nslup pfx'
+                   guard (not (isNullURI uri))
+                   pure (QName (LName (TS.fromText ln)) uri (Just pfx'))
+      _ -> Nothing
+  where
+    isName t
+      | Just (c,t') <- T.uncons t  = isNameStartChar c && T.all isNameChar t'
+      | otherwise                  = False

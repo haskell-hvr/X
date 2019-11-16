@@ -57,9 +57,13 @@ module Text.XML.Types
     , LName(..)
     , URI(..), isNullURI
 
+    , qnameToText
+    , qnameFromText
+
       -- * Miscellaneous
     , Pos
     ) where
 
 import           Text.XML.NS
 import           Text.XML.Types.Core
+import           Text.XML.Types.Internal

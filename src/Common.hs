@@ -12,6 +12,7 @@ module Common (module X) where
 
 import           Control.Applicative as X
 import           Control.DeepSeq     as X (NFData (rnf), deepseq)
+import           Control.Monad       as X (guard)
 import           Data.Data           as X (Data)
 import           Data.Foldable       as X (Foldable)
 import           Data.List           as X (sort)
@@ -25,4 +26,3 @@ import           Data.Traversable    as X (Traversable, traverse)
 import           Data.Typeable       as X (Typeable)
 import           Data.Word           as X
 import           GHC.Generics        as X (Generic)
-
