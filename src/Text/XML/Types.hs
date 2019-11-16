@@ -38,6 +38,8 @@ module Text.XML.Types
     , Element'(..)
     , blank_element
 
+    , xmlns_elem_wellformed
+
       -- ** Element attributes
     , Attr(..)
 

@@ -1,6 +1,6 @@
+{-# LANGUAGE LambdaCase        #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE Safe              #-}
-{-# LANGUAGE LambdaCase #-}
 
 {-
 
@@ -38,14 +38,15 @@ module Text.XML.NS
     , ns_xml_uri, xmlnsNS
 
     , xmlns_attr_wellformed
+    , xmlns_elem_wellformed
     ) where
 
 import           Common
+import           Data.Either         (partitionEithers)
+import qualified Data.Text           as T
 import qualified Data.Text.Short     as TS
 import           Text.XML.Types.Core
 import           Utils
-import Data.Either (partitionEithers)
-import qualified Data.Text       as T
 
 xmlNamesNS :: URI
 xmlNamesNS = URI ns_xml_uri
@@ -96,7 +97,8 @@ xmlns_from_attr (Attr (QName ln ns pfx) ns')
                   Nothing -> (mempty,     URI (TS.fromText ns'))
                   Just _  -> (unLName ln, URI (TS.fromText ns'))
 
--- | Check rules imposed on reserved namespaces by <https://www.w3.org/TR/xml-names/>
+-- not public API yet
+-- | Check rules imposed on reserved namespaces by <https://www.w3.org/TR/xml-names/
 xmlns_attr_wellformed :: Attr -> Bool
 xmlns_attr_wellformed = \case
     (Attr (QName { qPrefix = Just "xmlns", qLName = "xmlns"}) _  ) -> False
@@ -109,3 +111,40 @@ xmlns_attr_wellformed = \case
     xmlNamesNS' = TS.toText (unURI xmlNamesNS)
     xmlnsNS'    = TS.toText (unURI xmlnsNS)
     isNotRsvd uri = not (uri == xmlNamesNS' || uri == xmlnsNS')
+
+-- | Verify whether sub-tree is wellformed with respect to namespaces
+--
+-- The first argument denotes an optional parent context of
+-- @xmlns@-declarations that are in scope (where 'ShortText' and 'URI'
+-- have the same semantics as for the arguments of 'xmlns_attr'). In
+-- case of duplicate prefixes, earlier entries shadow later entries.
+--
+-- __NOTE__: This function doesn't take into account the namespace
+-- prefixes of @xs:QName@-valued text-nodes or attributes.
+--
+-- @since 0.3.1
+xmlns_elem_wellformed :: [(ShortText,URI)] -> Element -> Bool
+xmlns_elem_wellformed parentScope curElement =
+    qnameWF False (elName curElement) &&
+    all xmlns_attr_wellformed (elAttribs curElement) &&
+    all (qnameWF True . attrKey) nonXmlnsAttrs &&
+    all (xmlns_elem_wellformed curScope0) children
+  where
+    (xmlnsAttrs, nonXmlnsAttrs) =
+      partitionEithers .
+      map (\attr -> maybe (Right attr) Left (xmlns_from_attr attr)) $
+      elAttribs curElement
+
+    curScope0 = xmlnsAttrs ++ parentScope
+    curScope1 = ("xml",xmlNamesNS):("xmlns",xmlnsNS):curScope0
+
+    curDefNS = fromMaybe "" (lookup "" curScope0)
+
+    qnameWF False (QName _ uri Nothing)     = uri == curDefNS
+    qnameWF True  (QName _ uri Nothing)     = isNullURI uri -- attributes are agnostic to xmlns=...
+    qnameWF _     (QName _ uri (Just pfx))
+       | Just uri' <- lookup pfx curScope1  = uri == uri'
+       | otherwise                          = False
+
+    children :: [Element]
+    children = [ el | Elem el <- elContent curElement ]
