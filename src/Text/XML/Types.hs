@@ -67,7 +67,31 @@ permission notice:
 --
 -- Basic XML types.
 --
-module Text.XML.Types where
+module Text.XML.Types
+    ( Root, Root'(..)
+    , MiscNodes
+    , XmlDeclaration(..)
+    , PI(..)
+    , Comment(..)
+    , Content(..)
+    , Element
+    , Element'(..)
+    , Attr(..)
+    , CData(..), CDataKind(..)
+    , NCName
+    , QName(..)
+    , LName(..)
+    , URI(..), isNullURI
+    , Pos
+
+    , blank_name
+    , blank_cdata
+    , blank_element
+
+    , xmlns_attr
+    , xmlns_def_attr
+    , xmlns_from_attr
+    ) where
 
 import           Common
 import qualified Data.Text.Short as TS
