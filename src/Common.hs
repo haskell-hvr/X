@@ -1,3 +1,5 @@
+{-# LANGUAGE Safe #-}
+
 -- |
 -- Module    : Common
 -- Copyright : (c) Herbert Valerio Riedel 2019

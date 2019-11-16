@@ -1,3 +1,5 @@
+{-# LANGUAGE Safe #-}
+
 {-
 
 Copyright (c) 2019  Herbert Valerio Riedel <hvr@gnu.org>
