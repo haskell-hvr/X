@@ -1,5 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE Safe              #-}
+{-# LANGUAGE LambdaCase #-}
 
 {-
 
@@ -33,14 +34,24 @@ module Text.XML.NS
     , xmlns_def_attr
     , xmlns_from_attr
 
-    , ns_xmlns_uri
-    , ns_xml_uri
+    , ns_xmlns_uri, xmlNamesNS
+    , ns_xml_uri, xmlnsNS
+
+    , xmlns_attr_wellformed
     ) where
 
 import           Common
 import qualified Data.Text.Short     as TS
 import           Text.XML.Types.Core
 import           Utils
+import Data.Either (partitionEithers)
+import qualified Data.Text       as T
+
+xmlNamesNS :: URI
+xmlNamesNS = URI ns_xml_uri
+
+xmlnsNS :: URI
+xmlnsNS = URI ns_xmlns_uri
 
 {-# NOINLINE ns_xml_uri #-}
 ns_xml_uri :: ShortText
@@ -59,8 +70,6 @@ xmlns_attr pfx uri
   | not (isNCName (TS.unpack pfx)) = error "Text.XML.xmlns_attr: non-empty prefix is not a proper NCName"
   | isNullURI uri = error "Text.XML.xmlns_attr: empty namespace URI for non-empty prefix"
   | otherwise = Attr (QName { qPrefix = Just (TS.pack "xmlns"), qLName = LName pfx, qURI = xmlnsNS }) (TS.toText (unURI uri))
-  where
-    xmlnsNS = URI ns_xmlns_uri
 
 -- | Smart constructor for @xmlns = [\<namespace-uri\>|""]@ (i.e. for declaring the default namespace)
 --
@@ -72,8 +81,6 @@ xmlns_def_attr :: URI -- ^ Default namespace URI (use /empty/ 'URI' to reset def
 xmlns_def_attr uri
   = Attr (QName { qPrefix = Nothing, qLName = LName (TS.pack "xmlns"), qURI = xmlnsNS })
          (if isNullURI uri then mempty else TS.toText (unURI uri))
-  where
-    xmlnsNS = URI ns_xmlns_uri
 
 -- | Convert @xmlns@ 'Attr' into a @(prefix,namespace-uri)@ pair; returns 'Nothing' if the argument isn't a @xmlns@ attribute.
 --
@@ -88,3 +95,17 @@ xmlns_from_attr (Attr (QName ln ns pfx) ns')
   | otherwise = Just $ case pfx of
                   Nothing -> (mempty,     URI (TS.fromText ns'))
                   Just _  -> (unLName ln, URI (TS.fromText ns'))
+
+-- | Check rules imposed on reserved namespaces by <https://www.w3.org/TR/xml-names/>
+xmlns_attr_wellformed :: Attr -> Bool
+xmlns_attr_wellformed = \case
+    (Attr (QName { qPrefix = Just "xmlns", qLName = "xmlns"}) _  ) -> False
+    (Attr (QName { qPrefix = Just "xmlns", qLName = "xml"})   uri) -> uri == xmlNamesNS'
+    (Attr (QName { qPrefix = Just "xmlns", qLName = _})       uri) -> not (T.null uri) && isNotRsvd uri
+    (Attr (QName { qPrefix = Nothing     , qLName = "xmlns"}) "")  -> True
+    (Attr (QName { qPrefix = Nothing     , qLName = "xmlns"}) uri) -> isNotRsvd uri
+    _                                                              -> True
+  where
+    xmlNamesNS' = TS.toText (unURI xmlNamesNS)
+    xmlnsNS'    = TS.toText (unURI xmlnsNS)
+    isNotRsvd uri = not (uri == xmlNamesNS' || uri == xmlnsNS')

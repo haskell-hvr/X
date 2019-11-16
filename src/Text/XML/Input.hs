@@ -191,7 +191,7 @@ nodes cur_info ps (TokStart pos t as empty' : ts) = (node : siblings, open, toks
     new_name  = if nsfail then t else annotName new_info t
     prefixes  = filter (/= "xmlns") $ mapMaybe qPrefix (t : [ k | Attr k _ <- as ])
     nsfail    = any (==Nothing) [ lookup pfx (fst new_info) | pfx <- prefixes ]
-    rsvnsfail = not (all checkNS as)
+    rsvnsfail = not (all xmlns_attr_wellformed as)
     new_info  = foldr addNS cur_info as
     node | rsvnsfail = Failure pos "invalid namespace declaration"
          | nsfail    = Failure pos "undefined namespace prefix"
@@ -246,22 +246,3 @@ addNS (Attr { attrKey = key, attrVal = val }) (ns,def) =
     (Just "xmlns", k)     -> ((unLName k, URI (TS.fromText val)) : ns, def)
     _                     -> (ns,def)
 
--- | Check rules imposed on reserved namespaces by https://www.w3.org/TR/xml-names/
-checkNS :: Attr -> Bool
-checkNS = \case
-    (Attr (QName { qPrefix = Just "xmlns", qLName = "xmlns"}) _  ) -> False
-    (Attr (QName { qPrefix = Just "xmlns", qLName = "xml"})   uri) -> uri == xmlNamesNS'
-    (Attr (QName { qPrefix = Just "xmlns", qLName = _})       uri) -> not (T.null uri) && isNotRsvd uri
-    (Attr (QName { qPrefix = Nothing     , qLName = "xmlns"}) "")  -> True
-    (Attr (QName { qPrefix = Nothing     , qLName = "xmlns"}) uri) -> isNotRsvd uri
-    _                                                              -> True
-  where
-    xmlNamesNS' = TS.toText (unURI xmlNamesNS)
-    xmlnsNS'    = TS.toText (unURI xmlnsNS)
-    isNotRsvd uri = not (uri == xmlNamesNS' || uri == xmlnsNS')
-
-xmlNamesNS :: URI
-xmlNamesNS = URI ns_xml_uri
-
-xmlnsNS :: URI
-xmlnsNS = URI ns_xmlns_uri
