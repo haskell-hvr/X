@@ -121,19 +121,28 @@ qnameToText (QName (LName ln) _uri (Just pfx)) = TS.toText (mconcat [pfx, TS.sin
 
 -- | Decode a 'QName' from its text-representation (see 'qnameToText')
 --
--- This is the inverse to the 'qnameToText' function. However, 'qnameToText' is a lossy conversion, therefore this function needs to reconstruct the 'qURI' value via additional arguments:
+-- This is the inverse to the 'qnameToText' function. However,
+-- 'qnameToText' is a lossy conversion, therefore this function needs
+-- to reconstruct the namespace (i.e. 'qURI') with the help of a
+-- lookup function provided in the first argument: The lookup
+-- functions takes a 'ShortText' which can be either
 --
--- The first argument denotes the default namespace 'URI' to associate for unprefixed names; an empty 'URI' is allowed for this argument.
+-- - the empty string (i.e. @""@) which denotes an unprefixed name, or
+-- - a non-empty @NCName@ string which denotes a prefixed name.
 --
--- The second argument is a lookup function for mapping a prefix (in the case of a prefixed name) to its respective namespace 'URI'; if this function returns the empty (see 'isNullURI') 'qnameToText' will fail with 'Nothing'.
+-- The result of this function shall be the respective namespace 'URI'
+-- to associate with this QName. An empty 'URI' may be returned In
+-- case of unprefixed names to denote the name being in no namespace.
 --
--- Finally, this function returns 'Nothing' in case of syntax errors or the prefix lookup function returning an empty 'URI'.
+-- Finally, this function returns 'Nothing' in case of syntax errors
+-- or when the prefix lookup function returns an empty 'URI' (see
+-- 'isNullURI') for a /prefixed/ name.
 --
 -- @since 0.3.1
-qnameFromText :: URI -> (NCName -> URI) -> Text -> Maybe QName
-qnameFromText ns0 nslup txt
+qnameFromText :: (ShortText -> URI) -> Text -> Maybe QName
+qnameFromText nslup txt
   = case T.split (==':') txt of
-      [ln] | isName ln -> Just (QName (LName (TS.fromText ln)) ns0 Nothing)
+      [ln] | isName ln -> Just (QName (LName (TS.fromText ln)) (nslup mempty) Nothing)
       [ln,pfx] | isName ln, isName pfx -> do
                    let pfx' = TS.fromText pfx
                        uri  = nslup pfx'

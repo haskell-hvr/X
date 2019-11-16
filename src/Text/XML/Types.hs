@@ -39,6 +39,7 @@ module Text.XML.Types
     , blank_element
 
     , xmlns_elem_wellformed
+    , xmlns_elem_wellformed'
 
       -- ** Element attributes
     , Attr(..)
@@ -55,12 +56,13 @@ module Text.XML.Types
 
       -- * Namespace-qualified names
     , QName(..), blank_name
+    , qnameToText
+    , qnameFromText
+
+      -- ** Components of 'QName's
     , NCName
     , LName(..)
     , URI(..), isNullURI
-
-    , qnameToText
-    , qnameFromText
 
       -- * Miscellaneous
     , Pos

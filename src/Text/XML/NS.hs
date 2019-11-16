@@ -38,7 +38,9 @@ module Text.XML.NS
     , ns_xml_uri, xmlnsNS
 
     , xmlns_attr_wellformed
+
     , xmlns_elem_wellformed
+    , xmlns_elem_wellformed'
     ) where
 
 import           Common
@@ -120,7 +122,8 @@ xmlns_attr_wellformed = \case
 -- case of duplicate prefixes, earlier entries shadow later entries.
 --
 -- __NOTE__: This function doesn't take into account the namespace
--- prefixes of @xs:QName@-valued text-nodes or attributes.
+-- prefixes of @xs:QName@-valued text-nodes or attributes; if you need
+-- to handle such cases, see the 'xmlns_elem_wellformed'' function.
 --
 -- @since 0.3.1
 xmlns_elem_wellformed :: [(ShortText,URI)] -> Element -> Bool
@@ -148,3 +151,63 @@ xmlns_elem_wellformed parentScope curElement =
 
     children :: [Element]
     children = [ el | Elem el <- elContent curElement ]
+
+-- | Variant of 'xmlns_elem_wellformed' which supports introspecting @xs:QName@ valued attributes and text-nodes.
+--
+-- The first argument is a function for extracting a (possibly empty) list of 'QName's from attribute values and text-nodes:
+--
+-- - Its first @'Either' 'Attr' ['Content']@ argument denotes either a (non-empty) attribute or an element's children which contain at least one non-empty text-node fragment.
+--
+-- - The second argument of type @['QName']@ denotes the path of element 'QName's in reverse order (i.e. the top-level element of the traversal is last item in this list) leading to the currently focused attribute or text-node.
+--
+-- This 'QName' extracing function may return a list to accomodate for test fields which may contain multiple @xs:QName@ such as e.g. for
+--
+-- > <xs:list itemType="xs:QName" />
+--
+-- The 'Text.XML.Types.qnameFromText' function can be useful for decoding @xs:QName@s text values.
+--
+-- prop> xmlns_elem_wellformed' (\_ _ -> []) topns el = xmlns_elem_wellformed topns el
+--
+-- @since 0.3.1
+xmlns_elem_wellformed' :: (Either Attr [Content] -> [QName] -> [QName])
+                       -> [(ShortText,URI)] -> Element -> Bool
+xmlns_elem_wellformed' qnameMatcher = go []
+  where
+    go parentPath parentScope curElement = and
+        [ qnameWF False (elName curElement)
+        , all xmlns_attr_wellformed (elAttribs curElement)
+        , all (qnameWF True . attrKey) nonXmlnsAttrs
+        -- xs:QName in text-nodes and attrib values
+        , all (qnameWF False) cdataQName
+        , all (qnameWF False) attrQNames
+        -- recurse into children
+        , all (go curPath curScope0) children
+        ]
+      where
+        curPath = elName curElement : parentPath
+
+        cdataQName = if and [ T.all isS (cdData cd) | Text cd <- elContent curElement ]
+                     then []
+                     else qnameMatcher (Right (elContent curElement)) curPath
+
+        attrQNames = concat [ qnameMatcher (Left attr) curPath
+                            | attr@(Attr _ v) <- nonXmlnsAttrs, not (T.all isS v) ]
+
+        (xmlnsAttrs, nonXmlnsAttrs) =
+          partitionEithers .
+          map (\attr -> maybe (Right attr) Left (xmlns_from_attr attr)) $
+          elAttribs curElement
+
+        curScope0 = xmlnsAttrs ++ parentScope
+        curScope1 = ("xml",xmlNamesNS):("xmlns",xmlnsNS):curScope0
+
+        curDefNS = fromMaybe "" (lookup "" curScope0)
+
+        qnameWF False (QName _ uri Nothing)     = uri == curDefNS
+        qnameWF True  (QName _ uri Nothing)     = isNullURI uri -- attributes are agnostic to xmlns=...
+        qnameWF _     (QName _ uri (Just pfx))
+           | Just uri' <- lookup pfx curScope1  = uri == uri'
+           | otherwise                          = False
+
+        children :: [Element]
+        children = [ el | Elem el <- elContent curElement ]
