@@ -31,6 +31,7 @@ import           Common
 import           Utils
 
 import           Text.XML.Lexer
+import           Text.XML.NS
 import           Text.XML.Types
 
 import qualified Data.Text       as T
@@ -75,7 +76,7 @@ parseXMLRoot xs0 = do
     (rootPostElem,ts5) <- mnodes2 ts4
 
     case ts5 of
-      [] -> pure Root{..}
+      []    -> pure Root{..}
       (_:_) -> Left (-1,"unexpected (non-misc) content nodes after root element")
   where
     ts0 = scanXML (dropBOM xs0)
@@ -240,10 +241,10 @@ annotAttr ns a@(Attr { attrKey = k}) =
 addNS :: Attr -> NSInfo -> NSInfo
 addNS (Attr { attrKey = key, attrVal = val }) (ns,def) =
   case (qPrefix key, qLName key) of
-    (Nothing,"xmlns") -> (ns, if T.null val then nullNs else (URI (TS.fromText val)))
+    (Nothing,"xmlns")     -> (ns, if T.null val then nullNs else (URI (TS.fromText val)))
     (Just "xmlns", "xml") -> (ns,def)
-    (Just "xmlns", k) -> ((unLName k, URI (TS.fromText val)) : ns, def)
-    _                 -> (ns,def)
+    (Just "xmlns", k)     -> ((unLName k, URI (TS.fromText val)) : ns, def)
+    _                     -> (ns,def)
 
 -- | Check rules imposed on reserved namespaces by https://www.w3.org/TR/xml-names/
 checkNS :: Attr -> Bool

@@ -46,7 +46,7 @@ isS '\x0A' = True
 isS _      = False
 
 isNCName :: String -> Bool
-isNCName [] = False
+isNCName []     = False
 isNCName (c:cs) = isNameStartChar c && c /= ':' && all (\c' -> isNameChar c' && c' /= ':') cs
 
 -- |
@@ -165,13 +165,5 @@ bUnlines []           = mempty
 bUnlines [x]          = x
 bUnlines (x:xs@(_:_)) = x <+> TLB.singleton '\n' <+> bUnlines xs
 
-
-{-# NOINLINE ns_xmlns_uri #-}
-ns_xmlns_uri :: ShortText
-ns_xmlns_uri = "http://www.w3.org/2000/xmlns/"
-
-{-# NOINLINE ns_xml_uri #-}
-ns_xml_uri :: ShortText
-ns_xml_uri = "http://www.w3.org/XML/1998/namespace"
 
 

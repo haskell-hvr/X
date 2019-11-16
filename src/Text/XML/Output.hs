@@ -122,7 +122,7 @@ serializeXMLRoot sopts Root{..} = TLB.toLazyText $
     maybeToList xmldecl ++
     map bMisc rootPreElem ++
     (case rootDoctype of
-       Nothing -> []
+       Nothing             -> []
        Just (dtd,moreMisc) -> ("<!DOCTYPE" <+> TLB.fromText dtd <+> ">") : map bMisc moreMisc
     ) ++
     [TLB.fromString (ppElementS sopts rootElement "")] ++

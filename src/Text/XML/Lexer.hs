@@ -238,9 +238,9 @@ procins n0 = go ""
           | otherwise = [TokError n0 "Bad 'standalone' value in XML declaration"]
         go3 enc rest = go4 enc Nothing rest
 
-        go4 enc sd [] = TokXmlDecl (XmlDeclaration enc sd) : ts
+        go4 enc sd []   = TokXmlDecl (XmlDeclaration enc sd) : ts
         go4 enc sd [""] = TokXmlDecl (XmlDeclaration enc sd) : ts
-        go4 _ _ _ = [TokError n0 "unexpected or malformed attribute in XML declaration"]
+        go4 _ _ _       = [TokError n0 "unexpected or malformed attribute in XML declaration"]
 
         isEnc [] = False
         isEnc (c:cs) = (isAsciiLower c || isAsciiUpper c) &&
@@ -275,8 +275,8 @@ special ((n,'[') : (_,'C') : (_,'D') : (_,'A') : (_,'T') : (_,'A') : (_,'[') : c
                          else [TokError (n-2) "invalid code-point in CDATA block"]
   where
     cdata ((_,']') : (_,']') : (_,'>') : ds) = ([],ds)
-    cdata ((_,d) : ds)  = let (xs,ys) = cdata ds in (d:xs,ys)
-    cdata [] = ([],[])
+    cdata ((_,d) : ds)                       = let (xs,ys) = cdata ds in (d:xs,ys)
+    cdata []                                 = ([],[])
 
 -- <!DOCTYPE
 special ((_,'D') : (_,'O') : (_,'C') : (_,'T') : (_,'Y') : (_,'P') : (_,'E') : cs) =

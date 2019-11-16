@@ -38,6 +38,8 @@ library
       Common
       Utils
       Text.XML.Lexer
+      Text.XML.NS
+      Text.XML.Types.Core
       Text.XML.Types.Internal
 
   build-depends:
