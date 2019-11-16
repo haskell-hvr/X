@@ -150,7 +150,7 @@ instance NFData cnode => NFData (Element' cnode)
 
 -- | XML attributes
 data Attr     = Attr
-  { attrKey :: !QName
+  { attrKey :: !QName -- ^ Note that the default namespace doesn't apply to unprefixed names
   , attrVal :: !Text
   } deriving (Eq, Ord, Show, Typeable, Data, Generic)
 
@@ -179,12 +179,16 @@ instance NFData CDataKind
 -- @since 0.2.0
 type NCName = ShortText
 
--- | XML (expanded) qualified names
+-- | XML (expanded) namespace-qualified names
 --
+-- Used by 'attrKey' and 'elName'.
 data QName    = QName
   { qLName  :: !LName -- ^ Local name part
-  , qURI    :: !URI -- ^ Invariant: the `qURI' field MUST always be populated with the proper namespace. Specifically, entities belonging to the <http://www.w3.org/2000/xmlns/> or <http://www.w3.org/XML/1998/namespace> must have the 'qURI' field accordingly
-  , qPrefix :: Maybe NCName -- ^ Invariant: MUST be a proper <https://www.w3.org/TR/xml-names/#NT-NCName NCName>
+  , qURI    :: !URI -- ^ Invariant: the `qURI' field MUST always be populated with the proper namespace. Specifically, entities belonging to the <http://www.w3.org/2000/xmlns/> or <http://www.w3.org/XML/1998/namespace> must have the 'qURI' field set accordingly. The special empty 'URI' (see also 'isNullURI') is only allowed /iff/ 'qPrefix' is 'Nothing' (i.e. when the name is /unprefixed/)
+  , qPrefix :: Maybe NCName
+    -- ^ 'Nothing' denotes an unprefixed name; 'Just' denotes a prefixed name.
+    --
+    -- Invariant: MUST be a proper <https://www.w3.org/TR/xml-names/#NT-NCName NCName> (unless 'Nothing')
   } deriving (Show, Typeable, Data, Generic)
 
 instance NFData QName
@@ -226,6 +230,7 @@ instance Show LName where
 --
 -- Invariant: MUST be a valid @URI-reference@ as defined in <https://tools.ietf.org/html/rfc3986 RFC3986>
 --
+-- __NOTE__: The special empty 'URI' is valid for denoting 'QName's that aren't in any namespace.
 newtype URI = URI { unURI :: ShortText }
   deriving (Ord, Eq, Typeable, Data, IsString, NFData, Generic)
 
@@ -255,7 +260,11 @@ type Pos = Int
 
 -- blank elements --------------------------------------------------------------
 
+-- TODO: consider removing these in X-0.4.0
+
 -- | Blank names
+--
+-- __NOTE__: This value is not a proper 'QName'.
 blank_name :: QName
 blank_name = QName
   { qLName  = LName mempty
@@ -263,7 +272,7 @@ blank_name = QName
   , qPrefix = Nothing
   }
 
--- | Blank cdata
+-- | Empty text-node
 blank_cdata :: CData
 blank_cdata = CData
   { cdVerbatim = CDataText
@@ -271,6 +280,8 @@ blank_cdata = CData
   }
 
 -- | Blank elements
+--
+-- __NOTE: This value is not a propler 'Element'.
 blank_element :: Element
 blank_element = Element
   { elName    = blank_name

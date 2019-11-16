@@ -28,29 +28,37 @@ Copyright (c) 2019  Herbert Valerio Riedel <hvr@gnu.org>
 -- Basic XML types.
 --
 module Text.XML.Types
-    ( Root, Root'(..)
+    ( -- * Root node representation
+      Root, Root'(..)
     , MiscNodes
     , XmlDeclaration(..)
-    , PI(..)
-    , Comment(..)
-    , Content(..)
+
+      -- * Element nodes
     , Element
     , Element'(..)
-    , Attr(..)
-    , CData(..), CDataKind(..)
-    , NCName
-    , QName(..)
-    , LName(..)
-    , URI(..), isNullURI
-    , Pos
-
-    , blank_name
-    , blank_cdata
     , blank_element
+
+      -- ** Element attributes
+    , Attr(..)
 
     , xmlns_attr
     , xmlns_def_attr
     , xmlns_from_attr
+
+      -- * Non-element content nodes
+    , Content(..)
+    , PI(..)
+    , CData(..), CDataKind(..), blank_cdata
+    , Comment(..)
+
+      -- * Namespace-qualified names
+    , QName(..), blank_name
+    , NCName
+    , LName(..)
+    , URI(..), isNullURI
+
+      -- * Miscellaneous
+    , Pos
     ) where
 
 import           Text.XML.NS
