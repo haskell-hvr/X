@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE Safe              #-}
 
 {-
 
@@ -182,3 +183,46 @@ noDupes xs0
     go x1 (x2:xs)
       | x1 == x2  = False
       | otherwise = go x2 xs
+
+-- decode numeric char-reference taking into account 'isChar'
+decodeCharRefHex :: [Char] -> Maybe Char
+decodeCharRefHex = go 0 . dropWhile (=='0') -- NB: U+00 is invalid
+  where
+    go acc _ | acc > 0x10ffff = Nothing
+    go acc [] = let c = toEnum acc
+                in if isChar c then Just c else Nothing
+    go acc (c:cs)
+      | n < 0     = Nothing
+      | otherwise = go ((acc*16) + n) cs
+      where
+        n = c2n c
+
+    c2n :: Char -> Int
+    c2n c
+      | fromEnum '0' <= n, n <= fromEnum '9' = n - fromEnum '0'
+      | fromEnum 'a' <= n, n <= fromEnum 'f' = n - (fromEnum 'a' - 10)
+      | fromEnum 'A' <= n, n <= fromEnum 'F' = n - (fromEnum 'A' - 10)
+      | otherwise = -1
+      where
+        n = fromEnum c
+
+
+decodeCharRefDec :: [Char] -> Maybe Char
+decodeCharRefDec = go 0 . dropWhile (=='0') -- NB: U+00 is invalid
+  where
+    go acc _ | acc > 0x10ffff = Nothing
+    go acc [] = let c = toEnum acc
+                in if isChar c then Just c else Nothing
+    go acc (c:cs)
+      | n < 0     = Nothing
+      | otherwise = go ((acc*10) + n) cs
+      where
+        n = c2n c
+
+    c2n :: Char -> Int
+    c2n c
+      | fromEnum '0' <= n, n <= fromEnum '9' = n - fromEnum '0'
+      | otherwise = -1
+      where
+        n = fromEnum c
+

@@ -76,7 +76,6 @@ import           Data.Char       (isAsciiLower, isAsciiUpper, isDigit, toLower)
 import qualified Data.Text       as T
 import qualified Data.Text.Lazy  as TL
 import qualified Data.Text.Short as TS
-import           Numeric         (readHex)
 
 nullNs :: URI
 nullNs = URI mempty
@@ -411,7 +410,8 @@ decode_text cs  = let (as,bs) = break ('&' ==) cs
 
 cref_to_char :: [Char] -> Maybe Char
 cref_to_char cs = case cs of
-  '#' : ds -> num_esc ds
+  '#' : ds -> maybe (Just '\0') Just $ -- trigger error lateron
+              num_esc ds
   "lt"     -> Just '<'
   "gt"     -> Just '>'
   "amp"    -> Just '&'
@@ -421,11 +421,8 @@ cref_to_char cs = case cs of
 
 num_esc :: String -> Maybe Char
 num_esc cs = case cs of
-               'x' : ds -> check (readHex ds)
-               _        -> check (reads cs)
-
-  where check [(n,"")] = cvt_char n
-        check _        = Nothing
+               'x' : ds -> decodeCharRefHex ds
+               _        -> decodeCharRefDec cs
 
 cvt_char :: Int -> Maybe Char
 cvt_char x
@@ -455,4 +452,3 @@ simpleTokenize (c:cs)
 isValidQName :: QName -> Bool
 isValidQName (QName { qPrefix = Just pfx, qLName = LName ln }) = isNCName (TS.unpack pfx) && isNCName (TS.unpack ln)
 isValidQName (QName { qPrefix = Nothing, qLName = LName ln })  = isNCName (TS.unpack ln)
-
