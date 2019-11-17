@@ -1,6 +1,6 @@
 cabal-version:   2.2
 name:            X
-version:         0.3.0.0
+version:         0.3.1.0
 
 license:         BSD-3-Clause AND GPL-3.0-or-later
 license-files:   LICENSE LICENSE.GPLv3

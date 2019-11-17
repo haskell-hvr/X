@@ -196,10 +196,13 @@ nodes cur_info ps (TokStart pos t as empty' : ts) = (node : siblings, open, toks
     node | rsvnsfail = Failure pos "invalid namespace declaration"
          | nsfail    = Failure pos "undefined namespace prefix"
          | otherwise =
-                ElemF Element { elName    = new_name
-                              , elAttribs = map (annotAttr new_info) as
-                              , elContent = children
-                              }
+             let as' = map (annotAttr new_info) as
+             in if not (noDupes (map attrKey as'))
+                then Failure pos "attribute uniqueness violated"
+                else ElemF Element { elName    = new_name
+                                   , elAttribs = as'
+                                   , elContent = children
+                                   }
 
     (children,(siblings,open,toks))
       | empty'    = ([], nodes cur_info ps ts)
@@ -245,4 +248,3 @@ addNS (Attr { attrKey = key, attrVal = val }) (ns,def) =
     (Just "xmlns", "xml") -> (ns,def)
     (Just "xmlns", k)     -> ((unLName k, URI (TS.fromText val)) : ns, def)
     _                     -> (ns,def)
-

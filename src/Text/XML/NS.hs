@@ -127,11 +127,15 @@ xmlns_attr_wellformed = \case
 --
 -- @since 0.3.1
 xmlns_elem_wellformed :: [(ShortText,URI)] -> Element -> Bool
-xmlns_elem_wellformed parentScope curElement =
-    qnameWF False (elName curElement) &&
-    all xmlns_attr_wellformed (elAttribs curElement) &&
-    all (qnameWF True . attrKey) nonXmlnsAttrs &&
-    all (xmlns_elem_wellformed curScope0) children
+xmlns_elem_wellformed parentScope curElement = and
+    [ qnameWF False (elName curElement)
+    , all xmlns_attr_wellformed (elAttribs curElement)
+    , noDupes xmlnsAttrs
+    , all (qnameWF True . attrKey) nonXmlnsAttrs
+    , noDupes nonXmlnsAttrs
+    -- recurse into children
+    , all (xmlns_elem_wellformed curScope0) children
+    ]
   where
     (xmlnsAttrs, nonXmlnsAttrs) =
       partitionEithers .
@@ -176,7 +180,9 @@ xmlns_elem_wellformed' qnameMatcher = go []
     go parentPath parentScope curElement = and
         [ qnameWF False (elName curElement)
         , all xmlns_attr_wellformed (elAttribs curElement)
+        , noDupes xmlnsAttrs
         , all (qnameWF True . attrKey) nonXmlnsAttrs
+        , noDupes nonXmlnsAttrs
         -- xs:QName in text-nodes and attrib values
         , all (qnameWF False) cdataQName
         , all (qnameWF False) attrQNames

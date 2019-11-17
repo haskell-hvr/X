@@ -166,4 +166,19 @@ bUnlines [x]          = x
 bUnlines (x:xs@(_:_)) = x <+> TLB.singleton '\n' <+> bUnlines xs
 
 
-
+{-# INLINEABLE noDupes #-}
+-- | Return 'True' if list contains duplicate values
+noDupes :: Ord a => [a] -> Bool
+noDupes []      = True
+noDupes [_]     = True
+noDupes [x,y]   = x /= y
+noDupes [x,y,z] = x /= y && x /= z && y /= z
+noDupes xs0
+  = case sort xs0 of
+      []     -> True -- unreachable
+      (x:xs) -> go x xs
+  where
+    go _  []      = True
+    go x1 (x2:xs)
+      | x1 == x2  = False
+      | otherwise = go x2 xs
