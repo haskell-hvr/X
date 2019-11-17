@@ -195,6 +195,7 @@ nodes cur_info ps (TokStart pos t as empty' : ts) = (node : siblings, open, toks
     new_info  = foldr addNS cur_info as
     node | rsvnsfail = Failure pos "invalid namespace declaration"
          | nsfail    = Failure pos "undefined namespace prefix"
+         | Just "xmlns" <- qPrefix t = Failure pos "invalid 'xmlns'-prefixed element name"
          | otherwise =
              let as' = map (annotAttr new_info) as
              in if not (noDupes (map attrKey as'))
