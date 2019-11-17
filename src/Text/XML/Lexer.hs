@@ -180,7 +180,8 @@ tokens' cs@((n,_):_) = let (as,bs) = breakn ('<' ==) cs
       | otherwise        = [TokError n "invalid code-point in text content"]
       where
         dat = T.pack x
-    cvt (CRefBit x) cont = case cref_to_char x of
+    cvt (CRefBit _ False) _ = [TokError n "invalid character reference"]
+    cvt (CRefBit x True) cont = case cref_to_char x of
       Just c
         | isChar c -> TokText CData { cdVerbatim = CDataText, cdData = T.singleton c } : cont
         | otherwise -> [TokError n "invalid character reference"]
@@ -389,21 +390,23 @@ decode_attr :: String -> String
 decode_attr cs = concatMap cvt (decode_text cs)
   where
     cvt (TxtBit x) = norm x
-    cvt (CRefBit x)
+    cvt (CRefBit _ False) = "\0"
+    cvt (CRefBit x True)
       | Just c <- cref_to_char x = [c]
-      | otherwise                = "\0" -- triggers error lateron
+      | otherwise                = "\0" -- triggers error lateron (we can't represent refs in att-values)
 
     norm []         = []
     norm ('\x9':xs) = '\x20' : norm xs
     norm ('\xA':xs) = '\x20' : norm xs
     norm (x:xs)     = x : norm xs
 
-data Txt = TxtBit String | CRefBit String deriving Show
+data Txt = TxtBit  String
+         | CRefBit String Bool
 
 decode_text :: [Char] -> [Txt]
-decode_text xs@('&' : cs) = case break (';' ==) cs of
-                              (as,_:bs) -> CRefBit as : decode_text bs
-                              _         -> [TxtBit xs]
+decode_text ('&' : cs) = case break (';' ==) cs of
+                           (as,_:bs) -> CRefBit as True : decode_text bs
+                           (as,"")   -> [CRefBit as False]
 decode_text []  = []
 decode_text cs  = let (as,bs) = break ('&' ==) cs
                   in TxtBit as : decode_text bs
@@ -417,7 +420,10 @@ cref_to_char cs = case cs of
   "amp"    -> Just '&'
   "apos"   -> Just '\''
   "quot"   -> Just '"'
-  _        -> Nothing
+
+  ""       -> Just '\0' -- trigger error
+  (x:xs) | isNameStartChar x, all isNameChar xs -> Nothing
+         | otherwise -> Just '\0' -- invalid name
 
 num_esc :: String -> Maybe Char
 num_esc cs = case cs of

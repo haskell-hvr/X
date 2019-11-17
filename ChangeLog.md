@@ -9,7 +9,7 @@ See also http://pvp.haskell.org/faq
 - Fix attribute uniqueness violations not being detected
 - Fix too lax validation of `PITarget`s
 - Improve too lax validation of namespace names
-- Fix too lax validation of numeric character entity references
+- Fix too lax validation of entity references
 
 ## 0.3.0.0
 
