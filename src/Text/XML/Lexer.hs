@@ -200,7 +200,7 @@ procins n0 = go ""
     mkPI :: String -> [Token] -> [Token]
     mkPI s0 ts
       | tgt == "xml"  = mkXMLDecl s' ts
-      | map toLower (TS.unpack tgt) == "xml" = [TokError (n0+2) "Invalid PI name"]
+      | map toLower tgt0 == "xml" || not (isNCName tgt0) = [TokError (n0+2) "Invalid PI name"]
       | otherwise     = TokPI n0 (PI tgt payload) : ts
       where
         (tgt0,s') = break isS s0

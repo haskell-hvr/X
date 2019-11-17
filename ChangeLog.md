@@ -7,6 +7,7 @@ See also http://pvp.haskell.org/faq
 - Explicitly declare SafeHaskell levels; ensure all public modules are "Safe"
 - Fix pure exception bypassing proper failure reporting
 - Fix attribute uniqueness violations not being detected
+- Fix too lax validation of `PITarget`s
 
 ## 0.3.0.0
 

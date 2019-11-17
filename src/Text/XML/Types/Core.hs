@@ -110,7 +110,7 @@ instance NFData XmlDeclaration
 --
 -- @since 0.2.0
 data PI = PI
-  { piTarget :: !ShortText -- ^ Invariant: MUST not be @[Xx][Mm][Ll]@
+  { piTarget :: !ShortText -- ^ Invariant: MUST be a 'NCName' but not be @[Xx][Mm][Ll]@ (see also <https://www.w3.org/TR/xml/#NT-PITarget PITarget> and <https://www.w3.org/TR/xml-names/>)
   , piData   :: !Text      -- ^ Invariant: MUST not contain @?>@
   } deriving (Show, Typeable, Data, Generic)
 
