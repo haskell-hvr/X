@@ -8,6 +8,7 @@ See also http://pvp.haskell.org/faq
 - Fix pure exception bypassing proper failure reporting
 - Fix attribute uniqueness violations not being detected
 - Fix too lax validation of `PITarget`s
+- Improve too lax validation of namespace names
 
 ## 0.3.0.0
 

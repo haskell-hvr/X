@@ -44,6 +44,7 @@ module Text.XML.NS
     ) where
 
 import           Common
+import           Data.Char
 import           Data.Either         (partitionEithers)
 import qualified Data.Text           as T
 import qualified Data.Text.Short     as TS
@@ -100,19 +101,28 @@ xmlns_from_attr (Attr (QName ln ns pfx) ns')
                   Just _  -> (unLName ln, URI (TS.fromText ns'))
 
 -- not public API yet
--- | Check rules imposed on reserved namespaces by <https://www.w3.org/TR/xml-names/
+-- | Check rules imposed on reserved namespaces by
+-- <https://www.w3.org/TR/xml-names/> as well as other basic
+-- constraints.
 xmlns_attr_wellformed :: Attr -> Bool
 xmlns_attr_wellformed = \case
     (Attr (QName { qPrefix = Just "xmlns", qLName = "xmlns"}) _  ) -> False
     (Attr (QName { qPrefix = Just "xmlns", qLName = "xml"})   uri) -> uri == xmlNamesNS'
-    (Attr (QName { qPrefix = Just "xmlns", qLName = _})       uri) -> not (T.null uri) && isNotRsvd uri
+    (Attr (QName { qPrefix = Just "xmlns", qLName = _})       uri) -> not (T.null uri) && isNotRsvd uri && validURI uri
     (Attr (QName { qPrefix = Nothing     , qLName = "xmlns"}) "")  -> True
-    (Attr (QName { qPrefix = Nothing     , qLName = "xmlns"}) uri) -> isNotRsvd uri
-    _                                                              -> True
+    (Attr (QName { qPrefix = Nothing     , qLName = "xmlns"}) uri) -> isNotRsvd uri && (T.null uri || validURI uri)
+    _                                                              -> True -- not an attribute covered by xml-names
   where
     xmlNamesNS' = TS.toText (unURI xmlNamesNS)
     xmlnsNS'    = TS.toText (unURI xmlnsNS)
     isNotRsvd uri = not (uri == xmlNamesNS' || uri == xmlnsNS')
+
+    -- simple heuristic; TODO: implement proper RFC3986 syntax test
+    validURI = T.all validUriChar
+
+    -- as per RFC3986
+    validUriChar c = isAsciiLower c || isAsciiUpper c || isDigit c ||
+                     c `elem` ("%-._~:/?#[]@!$&'()*+,;=" :: [Char])
 
 -- | Verify whether sub-tree is wellformed with respect to namespaces
 --
