@@ -79,7 +79,7 @@ parseXMLRoot xs0 = do
       []    -> pure Root{..}
       (_:_) -> Left (-1,"unexpected (non-misc) content nodes after root element")
   where
-    ts0 = scanXML (dropBOM xs0)
+    ts0 = scanXML' (dropBOM xs0)
 
     -- mnodes :: [Token] -> Either _ ([MiscNodes],[Token])
 

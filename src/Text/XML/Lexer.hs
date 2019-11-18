@@ -134,12 +134,18 @@ eofErr = [TokError (-1) "Premature EOF"]
 
 -- | Run XML lexer over 'XmlSource'
 scanXML :: XmlSource source => source -> [Token]
-scanXML = tokens1 . eolNorm . go 0
+scanXML = tokens2 . eolNorm . go 0
   where
     go !n src = case uncons src of
       Just (c,src') -> (n,c) : go (n+1) src'
       Nothing       -> []
 
+scanXML' :: XmlSource source => source -> [Token]
+scanXML' = tokens1 . eolNorm . go 0
+  where
+    go !n src = case uncons src of
+      Just (c,src') -> (n,c) : go (n+1) src'
+      Nothing       -> []
 
 {-
 
