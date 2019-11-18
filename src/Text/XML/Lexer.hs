@@ -343,7 +343,7 @@ tag lcont ((p,'/') : cs)
                    []           -> eofErr
   | otherwise = [TokError p "invalid element name"]
   where
-    (n,ds) = qualName (dropSpace cs)
+    (n,ds) = qualName cs
 tag _ [] = eofErr
 tag lcont cs@((pos,_):_)
   | not (isValidQName n)                  = [TokError pos "invalid element name"]
@@ -352,28 +352,33 @@ tag lcont cs@((pos,_):_)
   | otherwise                             = TokStart pos n as b : ts
   where
     (n,ds)    = qualName cs
-    (as,b,ts) = attribs lcont (dropSpace ds)
+    (as,b,ts) = attribs lcont ds
 
 attribs :: LexCont -> LString -> ([Attr], Bool, [Token])
 attribs lcont = go
   where
-    go cs = case cs of
-      (_,'>') : ds -> ([], False, lcont ds)
-      (_,'/') : ds -> ([], True, case ds of
+    go cs = case (isS' cs, dropSpace cs) of
+      (_,(_,'>') : ds) -> ([], False, lcont ds)
+      (_,(_,'/') : ds) -> ([], True, case ds of
                               (_,'>') : es -> lcont es
                               (pos,_) : _  -> [TokError pos "expected '>'"]
                               []           -> eofErr)
-      (_,'?') : (_,'>') : ds -> ([], True, lcont ds)
+      (_,(_,'?') : (_,'>') : ds) -> ([], True, lcont ds)
 
       -- doc ended within a tag..
-      []       -> ([],False,eofErr)
+      (_,[])       -> ([],False,eofErr)
 
-      _        -> let (a,cs1) = attrib cs
-                      (as,b,ts) = go cs1
-                  in (a:as,b,ts)
+      (True,cs')   -> let (a,cs1) = attrib cs'
+                          (as,b,ts) = go cs1
+                      in (a:as,b,ts)
+
+      (False,(pos,_):_)  -> ([], False, [TokError pos "expected whitespace"])
+
+    isS' ((_,c):_) = isS c
+    isS' []        = False
 
 attrib :: LString -> (Attr,LString)
-attrib cs = ((Attr ks (fromString $ decode_attr vs)),dropSpace cs2)
+attrib cs = ((Attr ks (fromString $ decode_attr vs)),cs2)
   where
     (vs,cs2) = attr_val (dropSpace cs1)
     (ks,cs1) = qualName cs
@@ -460,8 +465,10 @@ cvt_char x
 simpleTokenize :: String -> [String]
 simpleTokenize [] = []
 simpleTokenize (c:cs)
-  | isSorEQ c = let (sep,rest) = span isSorEQ (c:cs)
-                in  (if ('=' `elem` sep) then "=" else "") : simpleTokenize rest
+  | isSorEQ c = case span isS (c:cs) of
+                 (_,'=':rest) -> "=" : simpleTokenize (dropWhile isS rest)
+                 (_:_,rest)   -> "" : simpleTokenize rest
+                 ([],_)       -> error "impossible"
 
   | c == '\'' = case break (== '\'') cs of
                   (_,"")       -> [c:cs]
