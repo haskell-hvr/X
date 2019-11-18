@@ -102,9 +102,9 @@ parseXMLRoot xs0 = do
           | isWsCdata cdata          = go acc rest
         go acc xs                    = pure (reverse acc, xs)
 
-
-isWsCdata :: CData -> Bool
-isWsCdata (CData _ t) = T.all isS t
+    isWsCdata :: CData -> Bool
+    isWsCdata (CData CDataText t) = T.all isS t
+    isWsCdata (CData _ _)         = False
 
 -- | parseXML to a list of 'Content' chunks
 --

@@ -112,6 +112,8 @@ instance XmlSource (Scanner s) where
 type LChar              = (Pos,Char)
 type LString            = [LChar]
 
+type LexCont            = LString -> [Token]
+
 -- | XML Lexer token.
 data Token              = TokStart !Pos QName [Attr] Bool
                           -- ^ opening start-tag (the 'Bool' field denotes whether this is an empty tag)
@@ -132,7 +134,7 @@ eofErr = [TokError (-1) "Premature EOF"]
 
 -- | Run XML lexer over 'XmlSource'
 scanXML :: XmlSource source => source -> [Token]
-scanXML = tokens0 . eolNorm . go 0
+scanXML = tokens1 . eolNorm . go 0
   where
     go !n src = case uncons src of
       Just (c,src') -> (n,c) : go (n+1) src'
@@ -155,26 +157,37 @@ eolNorm ((_,'\xD'):c@(_,'\xA'):cs) = c         : eolNorm cs
 eolNorm ((n,'\xD'):cs)             = (n,'\xA') : eolNorm cs
 eolNorm (c:cs)                     = c         : eolNorm cs
 
+-- prolog
+tokens1 :: LexCont
+tokens1 []                       = []
+tokens1 ((_,'<') : (_,'!') : cs) = special  tokens1 cs
+tokens1 ((n,'<') : (_,'?') : cs) = procins  tokens1 n cs
+tokens1 ((_,'<') : cs)           = tag      tokens2 cs
+tokens1 cs@(_:_)                 = sData    tokens1 cs
 
+sData :: LexCont -> LString -> [Token]
+sData lcont [] = lcont []
+sData lcont cs@((n,_):_)
+  = case breakn (not . isS) cs of
+      ("",_:_) -> [TokError n "unexpected (non-misc) content nodes before root element"]
+      (as,bs)  -> TokText CData { cdVerbatim = CDataText, cdData = T.pack as } : lcont bs
 
-tokens0 :: LString -> [Token]
--- tokens0 ((_,'<'):(_,'?'):(_,'x'):(_,'m'):(_,'l'):(_,c):cs)
---   | isS c = go1 (dropSpace cs)
---   where
---     go1 ((_,'v'):(_,'e'):(_,'r'):(_,'s'):(_,'i'):(_,'o'):(_,'n'):cs)
-tokens0 cs = tokens' cs
+-- after prolog
+tokens2 :: LexCont
+tokens2 []                       = []
+tokens2 ((_,'<') : (_,'!') : cs) = special  tokens2 cs
+tokens2 ((n,'<') : (_,'?') : cs) = procins  tokens2 n cs
+tokens2 ((_,'<') : cs)           = tag      tokens2 cs
+tokens2 cs@(_:_)                 = charData tokens2 cs
 
-
-tokens' :: LString -> [Token]
-tokens' ((_,'<') : (_,'!') : cs) = special cs
-tokens' ((n,'<') : (_,'?') : cs) = procins n cs
-tokens' ((_,'<') : cs) = tag cs
-tokens' [] = []
-tokens' cs@((n,_):_) = let (as,bs) = breakn ('<' ==) cs
-                       in foldr cvt (tokens' bs) (decode_text as)
-
-  -- XXX: Note, some of the lines might be a bit inacuarate
+charData :: LexCont -> LString -> [Token]
+charData lcont [] = lcont []
+charData lcont cs@((n,_):_)
+  = let (as,bs) = breakn ('<' ==) cs
+    in foldr cvt (lcont bs) (decode_text as)
   where
+    cvt :: Txt -> ([Token] -> [Token])
+    -- XXX: Note, some of the lines might be a bit inacuarate
     cvt (TxtBit x)  cont
       | T.isInfixOf "]]>" dat = [TokError n "invalid literal ']]>' sequence in text content"]
       | T.all isChar dat = TokText CData { cdVerbatim = CDataText, cdData = dat } : cont
@@ -191,10 +204,10 @@ tokens' cs@((n,_):_) = let (as,bs) = breakn ('<' ==) cs
 --
 -- PI        ::= '<?' PITarget (S (Char* - (Char* '?>' Char*)))? '?>'
 -- PITarget  ::= Name - (('X' | 'x') ('M' | 'm') ('L' | 'l'))
-procins :: Pos -> LString -> [Token]
-procins n0 = go ""
+procins :: LexCont -> Pos -> LString -> [Token]
+procins lcont n0 = go ""
   where
-    go acc ((_,'?') : (_,'>') : ds) = mkPI (reverse acc) (tokens' ds)
+    go acc ((_,'?') : (_,'>') : ds) = mkPI (reverse acc) (lcont ds)
     go acc ((_,c) : ds)             = go (c:acc) ds
     go _   []                       = eofErr
 
@@ -258,26 +271,26 @@ procins n0 = go ""
         unbrack _         = Nothing
 
 
-special :: LString -> [Token]
+special :: LexCont -> LString -> [Token]
 -- <!--
 --
 -- Comment ::=  '<!--' ((Char - '-') | ('-' (Char - '-')))* '-->'
-special ((n0,'-') : (_,'-') : cs) = go "" cs
+special lcont ((n0,'-') : (_,'-') : cs) = go "" cs
   where
     go acc ((n,'-') : (_,'-') : (_,x) : ds)
       | x == '>' = let dat = T.pack (reverse acc)
                    in if T.all isChar dat
-                      then TokComment (Comment dat) : tokens' ds
+                      then TokComment (Comment dat) : lcont ds
                       else [TokError (n0-2) "invalid code-point in comment"]
       | otherwise = [TokError n "double hyphen within comment"]
     go acc ((_,c) : ds) = go (c:acc) ds
     go _ [] = eofErr
 
 -- <![CDATA[
-special ((n,'[') : (_,'C') : (_,'D') : (_,'A') : (_,'T') : (_,'A') : (_,'[') : cs) =
+special lcont ((n,'[') : (_,'C') : (_,'D') : (_,'A') : (_,'T') : (_,'A') : (_,'[') : cs) =
   let (xs,ts) = cdata cs
       dat = T.pack xs
-  in if T.all isChar dat then TokText CData { cdVerbatim = CDataVerbatim, cdData = dat } : tokens' ts
+  in if T.all isChar dat then TokText CData { cdVerbatim = CDataVerbatim, cdData = dat } : lcont ts
                          else [TokError (n-2) "invalid code-point in CDATA block"]
   where
     cdata ((_,']') : (_,']') : (_,'>') : ds) = ([],ds)
@@ -285,8 +298,8 @@ special ((n,'[') : (_,'C') : (_,'D') : (_,'A') : (_,'T') : (_,'A') : (_,'[') : c
     cdata []                                 = ([],[])
 
 -- <!DOCTYPE
-special ((_,'D') : (_,'O') : (_,'C') : (_,'T') : (_,'Y') : (_,'P') : (_,'E') : cs) =
-  let (xs,ts) = munch "" 0 cs in TokDTD (T.pack (reverse xs)) : tokens' ts
+special lcont ((_,'D') : (_,'O') : (_,'C') : (_,'T') : (_,'Y') : (_,'P') : (_,'E') : cs) =
+  let (xs,ts) = munch "" 0 cs in TokDTD (T.pack (reverse xs)) : lcont ts
   where
     munch acc nesting ((_,'>') : ds)
      | nesting == (0::Int)            = (acc,ds)
@@ -295,8 +308,8 @@ special ((_,'D') : (_,'O') : (_,'C') : (_,'T') : (_,'Y') : (_,'P') : (_,'E') : c
     munch acc n ((_,x) : ds)          = munch (x:acc) n ds
     munch acc _ []                    = (acc,[]) -- unterminated DTD markup
 
-special ((n,_):_) = [TokError (n-1) "invalid element name"]
-special [] = eofErr
+special _ ((n,_):_) = [TokError (n-1) "invalid element name"]
+special _ [] = eofErr
 
 qualName :: LString -> (QName,LString)
 qualName xs = (QName { qURI    = nullNs
@@ -320,43 +333,44 @@ ETag          ::=  '</' Name S? '>'
 Attribute     ::=  Name Eq AttValue
 
 -}
-tag :: LString -> [Token]
-tag ((p,'/') : cs)
+tag :: LexCont -> LString -> [Token]
+tag lcont ((p,'/') : cs)
   | isValidQName n
   = TokEnd p n : case dropSpace ds of
-                   (_,'>') : es -> tokens' es
+                   (_,'>') : es -> lcont es
                    -- tag was not properly closed...
                    (p',_) : _   -> [TokError p' "expected '>'"]
                    []           -> eofErr
   | otherwise = [TokError p "invalid element name"]
   where
     (n,ds) = qualName (dropSpace cs)
-tag [] = eofErr
-tag cs@((pos,_):_)
-  | not (isValidQName n) = [TokError pos "invalid element name"]
+tag _ [] = eofErr
+tag lcont cs@((pos,_):_)
+  | not (isValidQName n)                  = [TokError pos "invalid element name"]
   | not (all (isValidQName . attrKey) as) = [TokError pos "invalid attribute name"]
   | not (all (T.all isChar . attrVal) as) = [TokError pos "invalid attribute value"]
-  | otherwise            = TokStart pos n as b : ts
+  | otherwise                             = TokStart pos n as b : ts
   where
     (n,ds)    = qualName cs
-    (as,b,ts) = attribs (dropSpace ds)
+    (as,b,ts) = attribs lcont (dropSpace ds)
 
+attribs :: LexCont -> LString -> ([Attr], Bool, [Token])
+attribs lcont = go
+  where
+    go cs = case cs of
+      (_,'>') : ds -> ([], False, lcont ds)
+      (_,'/') : ds -> ([], True, case ds of
+                              (_,'>') : es -> lcont es
+                              (pos,_) : _  -> [TokError pos "expected '>'"]
+                              []           -> eofErr)
+      (_,'?') : (_,'>') : ds -> ([], True, lcont ds)
 
-attribs :: LString -> ([Attr], Bool, [Token])
-attribs cs = case cs of
-    (_,'>') : ds -> ([], False, tokens' ds)
-    (_,'/') : ds -> ([], True, case ds of
-                            (_,'>') : es -> tokens' es
-                            (pos,_) : _  -> [TokError pos "expected '>'"]
-                            []           -> eofErr)
-    (_,'?') : (_,'>') : ds -> ([], True, tokens' ds)
+      -- doc ended within a tag..
+      []       -> ([],False,eofErr)
 
-    -- doc ended within a tag..
-    []       -> ([],False,eofErr)
-
-    _        -> let (a,cs1) = attrib cs
-                    (as,b,ts) = attribs cs1
-                in (a:as,b,ts)
+      _        -> let (a,cs1) = attrib cs
+                      (as,b,ts) = go cs1
+                  in (a:as,b,ts)
 
 attrib :: LString -> (Attr,LString)
 attrib cs = ((Attr ks (fromString $ decode_attr vs)),dropSpace cs2)
@@ -403,7 +417,7 @@ decode_attr cs = concatMap cvt (decode_text cs)
     norm []         = []
     norm ('\x9':xs) = '\x20' : norm xs
     norm ('\xA':xs) = '\x20' : norm xs
-    norm ('<':xs) = '<' : '\0' : norm xs -- hack: trigger error; literal '<'s are not allowed here
+    norm ('<':xs)   = '<' : '\0' : norm xs -- hack: trigger error; literal '<'s are not allowed here
     norm (x:xs)     = x : norm xs
 
 data Txt = TxtBit  String
