@@ -176,6 +176,7 @@ tokens' cs@((n,_):_) = let (as,bs) = breakn ('<' ==) cs
   -- XXX: Note, some of the lines might be a bit inacuarate
   where
     cvt (TxtBit x)  cont
+      | T.isInfixOf "]]>" dat = [TokError n "invalid literal ']]>' sequence in text content"]
       | T.all isChar dat = TokText CData { cdVerbatim = CDataText, cdData = dat } : cont
       | otherwise        = [TokError n "invalid code-point in text content"]
       where
@@ -201,6 +202,7 @@ procins n0 = go ""
     mkPI s0 ts
       | tgt == "xml"  = mkXMLDecl s' ts
       | map toLower tgt0 == "xml" || not (isNCName tgt0) = [TokError (n0+2) "Invalid PI name"]
+      | not (T.all isChar payload) = [TokError (n0+2) "invalid code-point in PI data"]
       | otherwise     = TokPI n0 (PI tgt payload) : ts
       where
         (tgt0,s') = break isS s0
@@ -260,10 +262,13 @@ special :: LString -> [Token]
 -- <!--
 --
 -- Comment ::=  '<!--' ((Char - '-') | ('-' (Char - '-')))* '-->'
-special ((_,'-') : (_,'-') : cs) = go "" cs
+special ((n0,'-') : (_,'-') : cs) = go "" cs
   where
     go acc ((n,'-') : (_,'-') : (_,x) : ds)
-      | x == '>' = TokComment (Comment $ T.pack (reverse acc)) : tokens' ds
+      | x == '>' = let dat = T.pack (reverse acc)
+                   in if T.all isChar dat
+                      then TokComment (Comment dat) : tokens' ds
+                      else [TokError (n0-2) "invalid code-point in comment"]
       | otherwise = [TokError n "double hyphen within comment"]
     go acc ((_,c) : ds) = go (c:acc) ds
     go _ [] = eofErr
@@ -398,6 +403,7 @@ decode_attr cs = concatMap cvt (decode_text cs)
     norm []         = []
     norm ('\x9':xs) = '\x20' : norm xs
     norm ('\xA':xs) = '\x20' : norm xs
+    norm ('<':xs) = '<' : '\0' : norm xs -- hack: trigger error; literal '<'s are not allowed here
     norm (x:xs)     = x : norm xs
 
 data Txt = TxtBit  String
