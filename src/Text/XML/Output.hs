@@ -153,13 +153,27 @@ ppContentS c x xs = case x of
     Comm t -> ppCommS t xs
 
 ppElementS :: SerializeXMLOptions -> Element -> ShowS
-ppElementS c e xs = tagStart (serializeSortAttributes c) (elName e) (elAttribs e) $ case elContent e of
-    [] | allowEmpty -> "/>" ++ xs
-    [Text t]        -> ">" ++ showCDataS t (tagEnd name xs)
-    cs              -> '>' : foldr (ppContentS c) (tagEnd name xs) cs
+ppElementS c e xs
+  | allowEmpty = tagStart (serializeSortAttributes c) (elName e) (elAttribs e) $ case elContent e of
+      []                   -> "/>" ++ xs
+      [Text t]
+        | isEmpty (Text t) -> "/>" ++ xs
+        | otherwise        -> '>' : showCDataS t (tagEnd name xs)
+      cs
+        | all isEmpty cs   -> "/>" ++ xs
+        | otherwise        -> '>' : foldr (ppContentS c) (tagEnd name xs) cs
+
+  | otherwise  = tagStart (serializeSortAttributes c) (elName e) (elAttribs e) $ case elContent e of
+      []       -> '>' : tagEnd name xs
+      [Text t] -> '>' : showCDataS t (tagEnd name xs)
+      cs       -> '>' : foldr (ppContentS c) (tagEnd name xs) cs
   where
     name = elName e
     allowEmpty = serializeAllowEmptyTag c name
+
+    {-# INLINE isEmpty #-}
+    isEmpty (Text (CData { cdVerbatim = CDataText, cdData = t })) = T.null t
+    isEmpty _                                                     = False
 
 ppCommS :: Comment -> ShowS
 ppCommS (Comment t) xs = "<!--" ++ T.unpack (T.replace "--" "-~" t) ++ "-->" ++ xs

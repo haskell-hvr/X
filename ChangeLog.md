@@ -1,5 +1,9 @@
 See also http://pvp.haskell.org/faq
 
+### TBD
+
+- Fix minor issue where empty text-nodes would inhibit empty element tags
+
 ### 0.3.1.0
 
 - New `xmlns_elem_wellformed` predicate for verifying namespace-wellformedness
